@@ -1,0 +1,120 @@
+import React, { useState } from 'react';
+// Aqui importaríamos a função que criamos no passo anterior:
+// import { buscarDadosFuncionario } from '../services/cruzarDados';
+
+export default function PainelDesligamento() {
+    // 1. Estados da Tela (Onde guardamos o que o usuário digita)
+    const [cpfBusca, setCpfBusca] = useState('');
+    const [dataDesligamento, setDataDesligamento] = useState('');
+    const [resultado, setResultado] = useState(null); // Guarda os dados encontrados
+    
+    // Estados do Formulário de Rescisão
+    const [motivo, setMotivo] = useState('');
+    const [processarSaude, setProcessarSaude] = useState(true);
+    const [processarDental, setProcessarDental] = useState(true);
+
+    // 2. Ação de Buscar
+    const handleBuscar = () => {
+        if (!cpfBusca || !dataDesligamento) {
+            alert("Por favor, preencha o CPF e a Data de Desligamento.");
+            return;
+        }
+        
+        // Simula a chamada daquela nossa função do motor central
+        // const dados = buscarDadosFuncionario(cpfBusca, dataDesligamento);
+        // setResultado(dados);
+        
+        console.log(`Buscando CPF: ${cpfBusca} com data ${dataDesligamento}`);
+    };
+
+    // 3. O Visual da Tela
+    return (
+        <div className="container-painel" style={{ padding: '20px', fontFamily: 'Arial' }}>
+            <h2>Gerador de Formulário Amil - Desligamentos</h2>
+            <hr />
+
+            {/* ÁREA DE BUSCA */}
+            <div className="area-busca" style={{ marginBottom: '30px' }}>
+                <label>CPF do Colaborador:</label>
+                <input 
+                    type="text" 
+                    placeholder="Somente números" 
+                    value={cpfBusca} 
+                    onChange={(e) => setCpfBusca(e.target.value)} 
+                />
+                
+                <label style={{ marginLeft: '15px' }}>Data da Rescisão:</label>
+                <input 
+                    type="date" 
+                    value={dataDesligamento} 
+                    onChange={(e) => setDataDesligamento(e.target.value)} 
+                />
+                
+                <button onClick={handleBuscar} style={{ marginLeft: '15px', padding: '5px 15px' }}>
+                    Buscar Dados
+                </button>
+            </div>
+
+            {/* ÁREA DE RESULTADOS (Só aparece se encontrar alguém) */}
+            {/* Aqui simulamos que o 'resultado' é verdadeiro para visualizar o layout */}
+            <div className="area-resultados" style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px' }}>
+                <h3>Confirmação de Dados</h3>
+                <p><strong>Nome:</strong> Carlos Silva</p>
+                <p><strong>Admissão no Sistema:</strong> 20/10/1985</p>
+
+                <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
+                    {/* CARD SAÚDE */}
+                    <div style={{ border: '1px solid #4CAF50', padding: '15px', borderRadius: '5px', flex: 1 }}>
+                        <label>
+                            <input 
+                                type="checkbox" 
+                                checked={processarSaude} 
+                                onChange={(e) => setProcessarSaude(e.target.checked)} 
+                            />
+                            <strong> Amil Saúde (Ativo)</strong>
+                        </label>
+                        <p>Carteirinha: 1584459002</p>
+                        <p>Tempo: 2 anos, 6 meses e 16 dias</p>
+                    </div>
+
+                    {/* CARD DENTAL */}
+                    <div style={{ border: '1px solid #999', padding: '15px', borderRadius: '5px', flex: 1, backgroundColor: '#f9f9f9' }}>
+                        <label>
+                            <input 
+                                type="checkbox" 
+                                checked={processarDental} 
+                                onChange={(e) => setProcessarDental(e.target.checked)} 
+                                disabled // Bloqueado porque o motor detectou que ele não tem
+                            />
+                            <strong style={{ color: '#999' }}> Amil Dental (Inativo)</strong>
+                        </label>
+                        <p style={{ color: '#999' }}>Colaborador não possui este benefício.</p>
+                    </div>
+                </div>
+
+                {/* ÁREA DE DECISÃO DA RESCISÃO */}
+                <div style={{ marginTop: '30px', backgroundColor: '#f0f8ff', padding: '15px', borderRadius: '5px' }}>
+                    <h4>Dados para o Formulário</h4>
+                    <label>Motivo do Cancelamento:</label>
+                    <select value={motivo} onChange={(e) => setMotivo(e.target.value)} style={{ marginLeft: '10px', width: '300px' }}>
+                        <option value="">Selecione o motivo exato...</option>
+                        <option value="pedido_demissao">Pedido de demissão (empregado)</option>
+                        <option value="sem_justa_causa">Demissão/exoneração sem justa causa</option>
+                        <option value="com_justa_causa">Demissão por justa causa</option>
+                        <option value="acordo">Extinção por acordo. Art. 484-A da CLT</option>
+                        <option value="termino_contrato">Término de contrato de trabalho/estágio</option>
+                    </select>
+
+                    {/* Aqui entrariam os botões de rádio para as opções de manutenção (Art. 30 e 31) */}
+                </div>
+
+                {/* BOTÃO FINAL */}
+                <div style={{ marginTop: '30px', textAlign: 'right' }}>
+                    <button style={{ padding: '10px 20px', backgroundColor: '#0056b3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' }}>
+                        Gerar Formulário Amil (PDF)
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}

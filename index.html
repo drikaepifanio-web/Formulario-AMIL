@@ -1,120 +1,640 @@
-import React, { useState } from 'react';
-// Aqui importaríamos a função que criamos no passo anterior:
-// import { buscarDadosFuncionario } from '../services/cruzarDados';
+import React, { useState, useEffect } from 'react';
+import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Database, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save } from 'lucide-react';
 
-export default function PainelDesligamento() {
-    // 1. Estados da Tela (Onde guardamos o que o usuário digita)
-    const [cpfBusca, setCpfBusca] = useState('');
-    const [dataDesligamento, setDataDesligamento] = useState('');
-    const [resultado, setResultado] = useState(null); // Guarda os dados encontrados
+export default function App() {
+  // ==========================================
+  // 1. ESTADOS DA APLICAÇÃO
+  // ==========================================
+  const [baseSistema, setBaseSistema] = useState([]);
+  const [faturaSaude, setFaturaSaude] = useState([]);
+  const [faturaDental, setFaturaDental] = useState([]);
+  
+  // Controle de Interface
+  const [mostrarAbastecimento, setMostrarAbastecimento] = useState(false);
+
+  const [cpfBusca, setCpfBusca] = useState('');
+  const [dataDesligamento, setDataDesligamento] = useState('');
+  const [resultado, setResultado] = useState(null);
+  const [erroPesquisa, setErroPesquisa] = useState('');
+  const [sucessoMsg, setSucessoMsg] = useState('');
+  
+  const [motivo, setMotivo] = useState('');
+
+  const [manterSaude, setManterSaude] = useState(true);
+  const [manterDental, setManterDental] = useState(true);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  
+  const [historico, setHistorico] = useState([]);
+  const [pdfOficialUrl, setPdfOficialUrl] = useState(null);
+  const [pdfOficialNome, setPdfOficialNome] = useState('');
+
+  useEffect(() => {
+    if (sucessoMsg) {
+      const timer = setTimeout(() => setSucessoMsg(''), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [sucessoMsg]);
+
+  // ==========================================
+  // 2. FUNÇÕES DE UPLOAD E UTILIDADES
+  // ==========================================
+  const processarCSV = (arquivo, setEstado) => {
+    if (!arquivo) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const texto = e.target.result;
+      const delimitador = texto.indexOf(';') > -1 ? ';' : ','; 
+      const linhas = texto.split('\n').filter(linha => linha.trim() !== '');
+      if (linhas.length < 2) return;
+      
+      let cabecalhos = linhas[0].split(delimitador).map(c => c.trim().toLowerCase());
+      if(cabecalhos.length > 0) cabecalhos[0] = cabecalhos[0].replace(/^\uFEFF/, '');
+
+      const dados = linhas.slice(1).map(linha => {
+        const valores = linha.split(delimitador).map(v => v.trim());
+        let obj = {};
+        cabecalhos.forEach((cabecalho, index) => {
+          obj[cabecalho] = valores[index];
+        });
+        return obj;
+      });
+      setEstado(dados);
+    };
+    reader.readAsText(arquivo, 'utf-8');
+  };
+
+  const handleUploadPdfOficial = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      const url = URL.createObjectURL(file);
+      setPdfOficialUrl(url);
+      setPdfOficialNome(file.name);
+      setSucessoMsg('Formulário em branco anexado com sucesso e pronto para download!');
+    } else if (file) {
+      alert("Por favor, envie apenas arquivos no formato PDF.");
+    }
+  };
+
+  // Função para verificar Atraso (SLA de 10 dias após a rescisão)
+  const verificarAtraso = (dataRescisao, dataEntrega) => {
+    if (!dataRescisao) return false;
     
-    // Estados do Formulário de Rescisão
-    const [motivo, setMotivo] = useState('');
-    const [processarSaude, setProcessarSaude] = useState(true);
-    const [processarDental, setProcessarDental] = useState(true);
+    // Converte a data de rescisão (DD/MM/YYYY) para objeto Date
+    const [d, m, y] = dataRescisao.split('/');
+    const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
+    
+    // Se tem data de entrega, compara com ela. Se não, compara com hoje.
+    const dataComparacao = dataEntrega ? new Date(`${dataEntrega}T00:00:00`) : new Date();
+    
+    const diferencaTempo = dataComparacao.getTime() - rescisaoDate.getTime();
+    const diferencaDias = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
+    
+    // Se passou de 10 dias, está atrasado
+    return diferencaDias > 10;
+  };
 
-    // 2. Ação de Buscar
-    const handleBuscar = () => {
-        if (!cpfBusca || !dataDesligamento) {
-            alert("Por favor, preencha o CPF e a Data de Desligamento.");
-            return;
-        }
-        
-        // Simula a chamada daquela nossa função do motor central
-        // const dados = buscarDadosFuncionario(cpfBusca, dataDesligamento);
-        // setResultado(dados);
-        
-        console.log(`Buscando CPF: ${cpfBusca} com data ${dataDesligamento}`);
+  // ==========================================
+  // 3. MOTOR LÓGICO E MATEMÁTICO
+  // ==========================================
+  const calcularTempo = (dataInicio, dataFim) => {
+    const converterData = (dataStr) => {
+      if (!dataStr) return new Date('Data Inválida');
+      if (dataStr.includes('/')) {
+        const [dia, mes, ano] = dataStr.split('/');
+        return new Date(ano, mes - 1, dia);
+      }
+      if (dataStr.includes('-')) {
+        const [ano, mes, dia] = dataStr.split('-');
+        return new Date(ano, mes - 1, dia);
+      }
+      return new Date(dataStr);
     };
 
-    // 3. O Visual da Tela
-    return (
-        <div className="container-painel" style={{ padding: '20px', fontFamily: 'Arial' }}>
-            <h2>Gerador de Formulário Amil - Desligamentos</h2>
-            <hr />
+    const inicio = converterData(dataInicio);
+    const fim = converterData(dataFim);
 
-            {/* ÁREA DE BUSCA */}
-            <div className="area-busca" style={{ marginBottom: '30px' }}>
-                <label>CPF do Colaborador:</label>
-                <input 
-                    type="text" 
-                    placeholder="Somente números" 
-                    value={cpfBusca} 
-                    onChange={(e) => setCpfBusca(e.target.value)} 
-                />
-                
-                <label style={{ marginLeft: '15px' }}>Data da Rescisão:</label>
-                <input 
-                    type="date" 
-                    value={dataDesligamento} 
-                    onChange={(e) => setDataDesligamento(e.target.value)} 
-                />
-                
-                <button onClick={handleBuscar} style={{ marginLeft: '15px', padding: '5px 15px' }}>
-                    Buscar Dados
-                </button>
-            </div>
+    if (isNaN(inicio) || isNaN(fim)) return { texto: "Data inválida", anos: 0, meses: 0, dias: 0 };
+    if (fim < inicio) return { texto: "Data de desligamento inválida", anos: 0, meses: 0, dias: 0 };
 
-            {/* ÁREA DE RESULTADOS (Só aparece se encontrar alguém) */}
-            {/* Aqui simulamos que o 'resultado' é verdadeiro para visualizar o layout */}
-            <div className="area-resultados" style={{ border: '1px solid #ccc', padding: '20px', borderRadius: '8px' }}>
-                <h3>Confirmação de Dados</h3>
-                <p><strong>Nome:</strong> Carlos Silva</p>
-                <p><strong>Admissão no Sistema:</strong> 20/10/1985</p>
+    let anos = fim.getFullYear() - inicio.getFullYear();
+    let meses = fim.getMonth() - inicio.getMonth();
+    let dias = fim.getDate() - inicio.getDate();
 
-                <div style={{ display: 'flex', gap: '20px', marginTop: '20px' }}>
-                    {/* CARD SAÚDE */}
-                    <div style={{ border: '1px solid #4CAF50', padding: '15px', borderRadius: '5px', flex: 1 }}>
-                        <label>
-                            <input 
-                                type="checkbox" 
-                                checked={processarSaude} 
-                                onChange={(e) => setProcessarSaude(e.target.checked)} 
-                            />
-                            <strong> Amil Saúde (Ativo)</strong>
-                        </label>
-                        <p>Carteirinha: 1584459002</p>
-                        <p>Tempo: 2 anos, 6 meses e 16 dias</p>
-                    </div>
+    if (dias < 0) {
+      meses--;
+      dias += new Date(fim.getFullYear(), fim.getMonth(), 0).getDate();
+    }
+    if (meses < 0) {
+      anos--;
+      meses += 12;
+    }
+    return { texto: `${anos} anos, ${meses} meses e ${dias} dias`, anos, meses, dias };
+  };
 
-                    {/* CARD DENTAL */}
-                    <div style={{ border: '1px solid #999', padding: '15px', borderRadius: '5px', flex: 1, backgroundColor: '#f9f9f9' }}>
-                        <label>
-                            <input 
-                                type="checkbox" 
-                                checked={processarDental} 
-                                onChange={(e) => setProcessarDental(e.target.checked)} 
-                                disabled // Bloqueado porque o motor detectou que ele não tem
-                            />
-                            <strong style={{ color: '#999' }}> Amil Dental (Inativo)</strong>
-                        </label>
-                        <p style={{ color: '#999' }}>Colaborador não possui este benefício.</p>
-                    </div>
-                </div>
+  const handleBuscar = () => {
+    setErroPesquisa('');
+    setResultado(null);
 
-                {/* ÁREA DE DECISÃO DA RESCISÃO */}
-                <div style={{ marginTop: '30px', backgroundColor: '#f0f8ff', padding: '15px', borderRadius: '5px' }}>
-                    <h4>Dados para o Formulário</h4>
-                    <label>Motivo do Cancelamento:</label>
-                    <select value={motivo} onChange={(e) => setMotivo(e.target.value)} style={{ marginLeft: '10px', width: '300px' }}>
-                        <option value="">Selecione o motivo exato...</option>
-                        <option value="pedido_demissao">Pedido de demissão (empregado)</option>
-                        <option value="sem_justa_causa">Demissão/exoneração sem justa causa</option>
-                        <option value="com_justa_causa">Demissão por justa causa</option>
-                        <option value="acordo">Extinção por acordo. Art. 484-A da CLT</option>
-                        <option value="termino_contrato">Término de contrato de trabalho/estágio</option>
-                    </select>
+    const limparDocumento = (doc) => doc ? doc.toString().replace(/\D/g, '') : '';
+    const cpfDigitado = limparDocumento(cpfBusca);
 
-                    {/* Aqui entrariam os botões de rádio para as opções de manutenção (Art. 30 e 31) */}
-                </div>
+    if (!cpfDigitado || !dataDesligamento) { setErroPesquisa('Preencha o CPF e a Data de Rescisão.'); return; }
+    if (baseSistema.length === 0) { setErroPesquisa('Nenhuma base de dados carregada.'); return; }
 
-                {/* BOTÃO FINAL */}
-                <div style={{ marginTop: '30px', textAlign: 'right' }}>
-                    <button style={{ padding: '10px 20px', backgroundColor: '#0056b3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' }}>
-                        Gerar Formulário Amil (PDF)
-                    </button>
-                </div>
-            </div>
-        </div>
+    const cadastro = baseSistema.find(f => limparDocumento(f.cpf) === cpfDigitado);
+    if (!cadastro) { setErroPesquisa('Colaborador não encontrado na Base do Sistema.'); return; }
+
+    const saude = faturaSaude.find(f => limparDocumento(f.cpf) === cpfDigitado);
+    const dental = faturaDental.find(f => limparDocumento(f.cpf) === cpfDigitado);
+
+    const extrairDataInicio = (registro) => {
+      if (!registro) return null;
+      const chaves = ['inicio', 'início', 'data de inicio', 'data inicio', 'vigencia', 'vigência', 'inclusão', 'inclusao', 'inicio plano'];
+      for (let chave of chaves) { if (registro[chave]) return registro[chave]; }
+      return null;
+    };
+
+    const inicioSaude = extrairDataInicio(saude);
+    const inicioDental = extrairDataInicio(dental);
+
+    setResultado({
+      nome: cadastro.nome,
+      admissao: cadastro.admissao,
+      saude: saude ? { ativo: true, carteirinha: saude.carteirinha, inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataDesligamento) } : { ativo: false },
+      dental: dental ? { ativo: true, carteirinha: dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false }
+    });
+    
+    setManterSaude(!!saude);
+    setManterDental(!!dental);
+  };
+
+  // ==========================================
+  // 4. MOTOR DE GERAÇÃO DO PDF (ESPELHO SIMPLES)
+  // ==========================================
+  const handleGerarPDF = async () => {
+    if (!motivo) { 
+      alert("⚠️ Regra da ANS não selecionada! Por favor, escolha o motivo da rescisão."); 
+      return; 
+    }
+
+    setGerandoPdf(true);
+    try {
+      if (!window.PDFLib) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("Falha ao carregar a biblioteca de PDF."));
+          document.head.appendChild(script);
+        });
+      }
+
+      const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]); // A4
+      
+      const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      
+      let yOffset = 800;
+      const margemEsq = 50;
+
+      const escrever = (texto, size = 12, isBold = false, cor = rgb(0.2, 0.2, 0.2)) => {
+        page.drawText(texto || '', { x: margemEsq, y: yOffset, size, font: isBold ? fontBold : fontNormal, color: cor });
+        yOffset -= (size + 10);
+      };
+
+      const escreverLinha = (label, valor) => {
+        page.drawText(label, { x: margemEsq, y: yOffset, size: 12, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
+        page.drawText(valor || 'Não informado', { x: margemEsq + 180, y: yOffset, size: 12, font: fontNormal, color: rgb(0, 0, 0) });
+        yOffset -= 22;
+      };
+
+      // Título
+      escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0, 0.2, 0.6));
+      escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5, 0.5, 0.5));
+      yOffset -= 20;
+
+      // Dados do Colaborador
+      escrever('DADOS DO COLABORADOR', 14, true, rgb(0, 0, 0));
+      yOffset -= 5;
+      escreverLinha('Nome Completo:', resultado.nome);
+      escreverLinha('CPF:', cpfBusca);
+      escreverLinha('Data de Admissão:', resultado.admissao);
+      escreverLinha('Data de Rescisão:', dataDesligamento.split('-').reverse().join('/'));
+      
+      const motivosFormatados = {
+        'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
+        'sem_justa_causa': 'Demissão/exoneração sem justa causa',
+        'com_justa_causa': 'Demissão por justa causa',
+        'aposentadoria': 'Aposentadoria'
+      };
+      escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo]);
+      
+      yOffset -= 20;
+
+      // Saúde
+      escrever('PLANO AMIL SAÚDE', 14, true, rgb(0, 0, 0));
+      yOffset -= 5;
+      if (resultado.saude.ativo && manterSaude) {
+        escreverLinha('Carteirinha:', resultado.saude.carteirinha);
+        escreverLinha('Data de Início no Plano:', resultado.saude.inicioPlano);
+        escreverLinha('Tempo de Contribuição:', resultado.saude.tempo?.texto);
+        escreverLinha('Fracionado:', `${resultado.saude.tempo?.anos} Anos | ${resultado.saude.tempo?.meses} Meses | ${resultado.saude.tempo?.dias} Dias`);
+      } else {
+        escrever('Não possui plano de saúde ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
+      }
+
+      yOffset -= 20;
+
+      // Dental
+      escrever('PLANO AMIL DENTAL', 14, true, rgb(0, 0, 0));
+      yOffset -= 5;
+      if (resultado.dental.ativo && manterDental) {
+        escreverLinha('Carteirinha:', resultado.dental.carteirinha);
+        escreverLinha('Data de Início no Plano:', resultado.dental.inicioPlano);
+        escreverLinha('Tempo de Contribuição:', resultado.dental.tempo?.texto);
+        escreverLinha('Fracionado:', `${resultado.dental.tempo?.anos} Anos | ${resultado.dental.tempo?.meses} Meses | ${resultado.dental.tempo?.dias} Dias`);
+      } else {
+        escrever('Não possui plano dental ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
+      }
+
+      // Rodapé
+      yOffset = 50;
+      escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-BR'), 9, false, rgb(0.6, 0.6, 0.6));
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob); // URL gerada para download
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Espelho_Amil_${resultado.nome.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setSucessoMsg(`Espelho de dados de ${resultado.nome} gerado com sucesso!`);
+      
+      // Adiciona ao Histórico, salvando o link do PDF e o campo de observação
+      const novoRegistro = {
+        id: Date.now(),
+        dataGeracao: new Date().toLocaleString('pt-BR'),
+        nome: resultado.nome,
+        cpf: cpfBusca,
+        dataRescisao: dataDesligamento.split('-').reverse().join('/'),
+        status: 'Gerado (Aguardando ação)',
+        dataEntrega: '',
+        emailHp: '',
+        observacao: '',
+        pdfUrl: url // <-- PDF salvo aqui para download posterior
+      };
+      setHistorico(prev => [novoRegistro, ...prev]);
+
+    } catch (error) {
+      console.error("Erro interno do PDF:", error);
+      alert("Ocorreu um erro ao gerar o relatório. Verifique sua conexão.");
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
+  // ==========================================
+  // 5. ATUALIZAÇÃO DO HISTÓRICO
+  // ==========================================
+  const atualizarHistorico = (id, campo, valor) => {
+    setHistorico(prev => 
+      prev.map(item => item.id === id ? { ...item, [campo]: valor } : item)
     );
+  };
+
+  const salvarAlteracoes = () => {
+    setSucessoMsg('Alterações e regras de SLA salvas com sucesso!');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
+      <div className="max-w-6xl mx-auto space-y-6">
+        
+        {/* ALERTAS GLOBAIS FLUTUANTES */}
+        {sucessoMsg && (
+          <div className="fixed top-4 right-4 z-50 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5">
+            <p className="font-medium flex items-center gap-2"><CheckCircle size={18}/> {sucessoMsg}</p>
+          </div>
+        )}
+
+        {/* CABEÇALHO ATUALIZADO */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
+              <FileText className="text-blue-600" /> Exclusões AMIL
+            </h1>
+            <p className="text-gray-500 text-sm mt-1">Geração de relatórios com cálculos exatos de permanência</p>
+          </div>
+          
+          {/* BOTÕES DE AÇÃO GLOBAIS */}
+          <div className="flex flex-wrap gap-2">
+            {pdfOficialUrl ? (
+              <a 
+                href={pdfOficialUrl} 
+                download={pdfOficialNome || "FORMULARIO_AMIL_EXCLUSAO.pdf"}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-bold whitespace-nowrap"
+                title="Baixar o arquivo em branco anexado"
+              >
+                <Download size={16} /> Baixar Formulário Oficial
+              </a>
+            ) : (
+              <button 
+                disabled
+                className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-bold whitespace-nowrap"
+                title="Anexe o formulário primeiro para poder baixar"
+              >
+                <Download size={16} /> Baixar Formulário Oficial
+              </button>
+            )}
+            
+            <label className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium whitespace-nowrap cursor-pointer">
+              <UploadCloud size={16} /> {pdfOficialUrl ? 'Substituir Formulário' : 'Anexar Formulário'}
+              <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadPdfOficial} />
+            </label>
+          </div>
+        </div>
+
+        {/* ÁREA DE ABASTECIMENTO (FECHADA POR PADRÃO) */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <button 
+            onClick={() => setMostrarAbastecimento(!mostrarAbastecimento)}
+            className="w-full p-6 flex items-center justify-between hover:bg-gray-50 transition-colors"
+          >
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+              <UploadCloud className="text-gray-400" /> 1. Arquivos de Origem (.CSV)
+            </h2>
+            <div className="text-gray-500 bg-gray-100 p-1.5 rounded-full">
+              {mostrarAbastecimento ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </div>
+          </button>
+
+          {mostrarAbastecimento && (
+            <div className="p-6 pt-0 border-t border-gray-100 animate-in slide-in-from-top-2 duration-200">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div className={`p-4 rounded-lg border-2 border-dashed ${baseSistema.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Base RH (Sistema)</label>
+                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setBaseSistema)} className="text-xs w-full" />
+                </div>
+                <div className={`p-4 rounded-lg border-2 border-dashed ${faturaSaude.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Saúde</label>
+                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaSaude)} className="text-xs w-full" />
+                </div>
+                <div className={`p-4 rounded-lg border-2 border-dashed ${faturaDental.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Dental</label>
+                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaDental)} className="text-xs w-full" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ÁREA DE OPERAÇÃO E CÁLCULO */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Search className="text-gray-400" /> 2. Buscar e Calcular
+          </h2>
+          <div className="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
+              <input type="text" placeholder="Ex: 55566677788" value={cpfBusca} onChange={(e) => setCpfBusca(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data da Rescisão</label>
+              <input type="date" value={dataDesligamento} onChange={(e) => setDataDesligamento(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
+            </div>
+            <button onClick={handleBuscar} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm">
+              Processar Dados
+            </button>
+          </div>
+          {erroPesquisa && <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200"><AlertCircle size={16} /> {erroPesquisa}</div>}
+        </div>
+
+        {/* ESPELHO DE RESULTADOS */}
+        {resultado && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
+            
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">{resultado.nome}</h3>
+                <p className="text-sm text-gray-500">CPF: {cpfBusca} • Demissão: {dataDesligamento.split('-').reverse().join('/')}</p>
+              </div>
+              <div className="mt-4 md:mt-0 w-full md:w-auto">
+                <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={`w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium ${motivo ? 'bg-green-50 border-green-300 text-green-800' : 'border-orange-300 bg-orange-50 text-orange-800'}`}>
+                  <option value="">⚠️ Obrigatório: Regra ANS...</option>
+                  <option value="pedido_demissao">Pedido de demissão</option>
+                  <option value="sem_justa_causa">Sem justa causa</option>
+                  <option value="com_justa_causa">Com justa causa</option>
+                  <option value="aposentadoria">Aposentadoria</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* CARD SAÚDE */}
+              <div className={`p-4 rounded-xl border-2 ${resultado.saude.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={`font-bold ${resultado.saude.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Saúde</h4>
+                  {resultado.saude.ativo && (
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={manterSaude} onChange={(e) => setManterSaude(e.target.checked)} className="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
+                      Incluir no PDF
+                    </label>
+                  )}
+                </div>
+                {resultado.saude.ativo ? (
+                  <div className="space-y-1 text-sm text-gray-700">
+                    <p><span className="text-gray-500">Carteirinha:</span> {resultado.saude.carteirinha}</p>
+                    <p><span className="text-gray-500">Início no Plano:</span> {resultado.saude.inicioPlano || 'Data não localizada'}</p>
+                    <p><span className="text-gray-500">Tempo de Contribuição:</span></p>
+                    <p className="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">{resultado.saude.tempo?.texto}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Colaborador não possui plano de saúde ativo.</p>
+                )}
+              </div>
+
+              {/* CARD DENTAL */}
+              <div className={`p-4 rounded-xl border-2 ${resultado.dental.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={`font-bold ${resultado.dental.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Dental</h4>
+                  {resultado.dental.ativo && (
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={manterDental} onChange={(e) => setManterDental(e.target.checked)} className="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
+                      Incluir no PDF
+                    </label>
+                  )}
+                </div>
+                {resultado.dental.ativo ? (
+                  <div className="space-y-1 text-sm text-gray-700">
+                    <p><span className="text-gray-500">Carteirinha:</span> {resultado.dental.carteirinha}</p>
+                    <p><span className="text-gray-500">Início no Plano:</span> {resultado.dental.inicioPlano || 'Data não localizada'}</p>
+                    <p><span className="text-gray-500">Tempo de Contribuição:</span></p>
+                    <p className="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">{resultado.dental.tempo?.texto}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Colaborador não possui plano dental ativo.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-6">
+              <button 
+                onClick={handleGerarPDF}
+                disabled={gerandoPdf}
+                className={`px-8 py-3 font-bold rounded-lg transition-all shadow flex items-center gap-3 ${
+                  gerandoPdf ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-900 text-white hover:bg-blue-800 hover:shadow-lg'
+                }`}
+              >
+                {gerandoPdf ? 'Processando Documento...' : 'Baixar Espelho (PDF)'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ÁREA DE HISTÓRICO - CONTROLE DE MOVIMENTAÇÕES AMIL */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <Clock className="text-blue-600" /> 3. Controle de Movimentações Amil
+          </h2>
+          {historico.length === 0 ? (
+            <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controle gerado nesta sessão.</p>
+          ) : (
+            <div className="overflow-x-auto pb-4">
+              <table className="w-full text-sm text-left text-gray-600">
+                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3">Data</th>
+                    <th className="px-4 py-3">Colaborador</th>
+                    <th className="px-4 py-3">Rescisão</th>
+                    <th className="px-4 py-3" style={{ minWidth: '400px' }}>Status, Ações e Observações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historico.map((item) => {
+                    const temAtraso = item.status !== 'Exclusão processada' && verificarAtraso(item.dataRescisao, item.dataEntrega);
+
+                    return (
+                      <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/30">
+                        <td className="px-4 py-4 align-top pt-5">{item.dataGeracao.split(' ')[0]}</td>
+                        <td className="px-4 py-4 align-top pt-5 font-medium text-gray-800">
+                          {item.nome}
+                          <br/><span className="text-xs text-gray-400 font-normal">CPF: {item.cpf}</span>
+                        </td>
+                        <td className="px-4 py-4 align-top pt-5">{item.dataRescisao}</td>
+                        <td className="px-4 py-4 align-top">
+                          
+                          <div className="flex gap-2 mb-3">
+                            {/* SELECT DE STATUS */}
+                            <select 
+                              value={item.status}
+                              onChange={(e) => atualizarHistorico(item.id, 'status', e.target.value)}
+                              className={`flex-1 p-2 border rounded text-sm outline-none font-medium ${
+                                item.status === 'Exclusão processada' ? 'bg-green-100 text-green-800 border-green-300' :
+                                item.status === 'Gerado (Aguardando ação)' ? 'bg-gray-100 text-gray-600 border-gray-300' :
+                                'bg-blue-50 text-blue-800 border-blue-300'
+                              }`}
+                            >
+                              <option value="Gerado (Aguardando ação)">Gerado (Aguardando ação)</option>
+                              <option value="Preenchido e assinado">Preenchido e assinado</option>
+                              <option value="Enviado para o colaborador">Enviado para o colaborador</option>
+                              <option value="Encaminhado para hphealth">Encaminhado para hphealth</option>
+                              <option value="Exclusão processada">Exclusão processada</option>
+                            </select>
+
+                            {/* BOTÃO DOWNLOAD PDF DIRETO */}
+                            {item.pdfUrl && (
+                              <a 
+                                href={item.pdfUrl}
+                                download={`Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`}
+                                className="flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white p-2 rounded px-3 transition-colors"
+                                title="Baixar PDF do Espelho novamente"
+                              >
+                                <Download size={16} />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* ALERTA DE ATRASO (> 10 DIAS DA RESCISÃO) */}
+                          {temAtraso && (
+                            <div className="mb-3 px-2 py-1.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-semibold flex items-center gap-1.5">
+                              <AlertTriangle size={14} /> Atenção: Prazo de entrega (SLA 10 dias) expirado!
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 gap-3">
+                            {/* INPUT CONDICIONAL: ENVIADO PARA O COLABORADOR */}
+                            {item.status === 'Enviado para o colaborador' && (
+                              <div className="animate-in fade-in slide-in-from-top-1">
+                                <label className="text-xs text-gray-500 mb-1 block">Data da Entrega:</label>
+                                <input 
+                                  type="date" 
+                                  value={item.dataEntrega}
+                                  onChange={(e) => atualizarHistorico(item.id, 'dataEntrega', e.target.value)}
+                                  className={`w-full p-1.5 border rounded text-sm focus:ring-1 outline-none ${temAtraso && item.dataEntrega ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                                />
+                              </div>
+                            )}
+
+                            {/* INPUT CONDICIONAL: ENCAMINHADO PARA HPHEALTH */}
+                            {item.status === 'Encaminhado para hphealth' && (
+                              <div className="animate-in fade-in slide-in-from-top-1">
+                                <label className="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
+                                <div className="flex gap-2">
+                                  <input 
+                                    type="email" 
+                                    placeholder="exemplo@hphealth.com.br"
+                                    value={item.emailHp}
+                                    onChange={(e) => atualizarHistorico(item.id, 'emailHp', e.target.value)}
+                                    className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:ring-1 outline-none"
+                                  />
+                                  <a 
+                                    href={`mailto:${item.emailHp || ''}?subject=Formulário de Exclusão Amil - ${item.nome}&body=Olá,%0D%0A%0D%0ASegue em anexo o formulário de exclusão referente ao colaborador ${item.nome} (CPF: ${item.cpf}).`}
+                                    className={`p-1.5 rounded flex items-center justify-center transition-colors ${item.emailHp ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'}`}
+                                    title="Abrir Caixa de E-mail"
+                                  >
+                                    <Send size={16} />
+                                  </a>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* CAMPO DE OBSERVAÇÕES */}
+                            <div>
+                              <textarea
+                                placeholder="Adicionar observações..."
+                                value={item.observacao}
+                                onChange={(e) => atualizarHistorico(item.id, 'observacao', e.target.value)}
+                                rows={2}
+                                className="w-full p-2 border border-gray-200 bg-yellow-50/30 rounded text-xs focus:ring-1 focus:ring-yellow-400 outline-none resize-none"
+                              />
+                            </div>
+                            
+                            {/* BOTÃO SALVAR PARA CONFORTO DO USUÁRIO */}
+                            <button 
+                              onClick={salvarAlteracoes}
+                              className="w-full mt-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-xs font-bold transition-colors border border-gray-300 flex items-center justify-center gap-1.5"
+                            >
+                              <Save size={14}/> Salvar Registro
+                            </button>
+                          </div>
+
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
 }

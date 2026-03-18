@@ -1,5 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Database, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save, ListChecks, Cloud } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc } from 'firebase/firestore';
+
+// ==========================================
+// INICIALIZAÇÃO DO FIREBASE (PERSISTÊNCIA)
+// ==========================================
+let app, auth, db, appId;
+try {
+  const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+  const firebaseConfig = JSON.parse(configStr);
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+} catch (e) {
+  console.warn("Firebase não configurado. Os dados não serão salvos na nuvem.", e);
+}
 
 export default function App() {
   // ==========================================
@@ -8,6 +26,7 @@ export default function App() {
   const [baseSistema, setBaseSistema] = useState([]);
   const [faturaSaude, setFaturaSaude] = useState([]);
   const [faturaDental, setFaturaDental] = useState([]);
+  const [loteDesligamentos, setLoteDesligamentos] = useState([]); // Lote da Semana
   
   // Controle de Interface
   const [mostrarAbastecimento, setMostrarAbastecimento] = useState(false);
@@ -25,6 +44,14 @@ export default function App() {
   const [gerandoPdf, setGerandoPdf] = useState(false);
   
   const [historico, setHistorico] = useState([]);
+  const [filtroPeriodo, setFiltroPeriodo] = useState(''); // Estado para o filtro de Mês/Ano
+  
+  // Autenticação e Alertas
+  const [user, setUser] = useState(null);
+  const [alertaGlobal, setAlertaGlobal] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  
+  // Estado para o PDF Oficial anexado
   const [pdfOficialUrl, setPdfOficialUrl] = useState(null);
   const [pdfOficialNome, setPdfOficialNome] = useState('');
 
@@ -34,6 +61,85 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [sucessoMsg]);
+
+  useEffect(() => {
+    if (alertaGlobal) {
+      const timer = setTimeout(() => setAlertaGlobal(''), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [alertaGlobal]);
+
+  // ==========================================
+  // AUTENTICAÇÃO E SINCRONIZAÇÃO (FIREBASE)
+  // ==========================================
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Erro na autenticação:", error);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    
+    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'historicoAmil');
+    const unsubscribe = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const dados = [];
+        snapshot.forEach((doc) => dados.push({ ...doc.data(), id: Number(doc.id) }));
+        setHistorico(dados.sort((a, b) => b.id - a.id));
+      },
+      (error) => console.error("Erro no onSnapshot:", error)
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  // Carrega o Formulário PDF Oficial salvo na nuvem
+  useEffect(() => {
+    if (!user || !db) return;
+    const loadConfig = async () => {
+      try {
+        const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
+        const docSnap = await getDoc(configRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.pdfOficialBase64) {
+            setPdfOficialUrl(data.pdfOficialBase64);
+            setPdfOficialNome(data.pdfOficialNome || 'FORMULARIO_AMIL_EXCLUSAO.pdf');
+          }
+        }
+      } catch (e) {
+        console.error("Erro ao carregar config:", e);
+      }
+    };
+    loadConfig();
+  }, [user]);
+
+  const salvarNoFirestore = async (registro) => {
+    if (!user || !db) return;
+    setSalvando(true);
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'historicoAmil', registro.id.toString());
+      await setDoc(docRef, registro);
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      setAlertaGlobal("Erro de conexão ao tentar salvar na nuvem.");
+    } finally {
+      setTimeout(() => setSalvando(false), 800);
+    }
+  };
 
   // ==========================================
   // 2. FUNÇÕES DE UPLOAD E UTILIDADES
@@ -66,55 +172,133 @@ export default function App() {
   const handleUploadPdfOficial = (e) => {
     const file = e.target.files[0];
     if (file && file.type === 'application/pdf') {
-      const url = URL.createObjectURL(file);
-      setPdfOficialUrl(url);
-      setPdfOficialNome(file.name);
-      setSucessoMsg('Formulário em branco anexado com sucesso e pronto para download!');
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64data = reader.result;
+        setPdfOficialUrl(base64data);
+        setPdfOficialNome(file.name);
+        setSucessoMsg('Formulário anexado e salvo na nuvem com sucesso!');
+        
+        if (user && db) {
+          try {
+            const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
+            await setDoc(configRef, { 
+              pdfOficialBase64: base64data, 
+              pdfOficialNome: file.name 
+            }, { merge: true });
+          } catch (err) {
+            console.error("Erro ao salvar PDF oficial na nuvem:", err);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
     } else if (file) {
-      alert("Por favor, envie apenas arquivos no formato PDF.");
+      setAlertaGlobal("Por favor, envie apenas arquivos no formato PDF.");
     }
   };
 
-  // Função para verificar Atraso (SLA de 10 dias após a rescisão)
   const verificarAtraso = (dataRescisao, dataEntrega) => {
     if (!dataRescisao) return false;
-    
-    // Converte a data de rescisão (DD/MM/YYYY) para objeto Date
     const [d, m, y] = dataRescisao.split('/');
-    const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
+    if (!d || !m || !y) return false;
     
-    // Se tem data de entrega, compara com ela. Se não, compara com hoje.
+    const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
     const dataComparacao = dataEntrega ? new Date(`${dataEntrega}T00:00:00`) : new Date();
     
     const diferencaTempo = dataComparacao.getTime() - rescisaoDate.getTime();
     const diferencaDias = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
     
-    // Se passou de 10 dias, está atrasado
     return diferencaDias > 10;
   };
 
+  const calcularDiasDesdeRescisao = (dataStr) => {
+    if (!dataStr) return 0;
+    let d, m, y;
+    if (dataStr.includes('/')) {
+      [d, m, y] = dataStr.split('/');
+    } else if (dataStr.includes('-')) {
+      const parts = dataStr.split('-');
+      if (parts[0].length === 4) {
+        y = parts[0]; m = parts[1]; d = parts[2];
+      } else {
+        d = parts[0]; m = parts[1]; y = parts[2];
+      }
+    } else {
+      return 0;
+    }
+    const dataR = new Date(`${y}-${m}-${d}T00:00:00`);
+    const hoje = new Date();
+    return Math.floor((hoje.getTime() - dataR.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
   // ==========================================
-  // 3. MOTOR LÓGICO E MATEMÁTICO
+  // 3. MOTOR LÓGICO: BUSCA E LOTE
   // ==========================================
+  const limparDocumento = (doc) => doc ? doc.toString().replace(/\D/g, '') : '';
+  
+  const encontrarValor = (obj, palavrasChave) => {
+    if (!obj) return null;
+    const chave = Object.keys(obj).find(k => palavrasChave.some(p => k.includes(p)));
+    return chave ? obj[chave] : null;
+  };
+
+  const extrairNome = (reg) => encontrarValor(reg, ['nome', 'titular', 'colaborador', 'beneficiario']);
+  const extrairCpf = (reg) => encontrarValor(reg, ['cpf']);
+  const extrairCarteirinha = (reg) => encontrarValor(reg, ['carteirinha', 'matricula', 'código', 'codigo']);
+  
+  const extrairAdmissao = (reg) => encontrarValor(reg, ['admiss', 'inicio', 'início', 'contrata', 'entrada']);
+  
+  const formatarDataApresentacao = (dataRaw) => {
+    if (!dataRaw) return null;
+    const str = String(dataRaw).trim().split(' ')[0];
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    if (!isNaN(str) && Number(str) > 10000) {
+      const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+      const d = new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
+      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    }
+    return str;
+  };
+
+  const extrairDataInicio = (registro) => {
+    if (!registro) return null;
+    const palavrasChave = ['inclusão', 'inclusao', 'vigencia', 'vigência', 'inicio', 'início', 'admissao', 'admissão'];
+    const chaveEncontrada = Object.keys(registro).find(k => palavrasChave.some(p => k.includes(p)));
+    return chaveEncontrada ? registro[chaveEncontrada] : null;
+  };
+
   const calcularTempo = (dataInicio, dataFim) => {
     const converterData = (dataStr) => {
       if (!dataStr) return new Date('Data Inválida');
-      if (dataStr.includes('/')) {
-        const [dia, mes, ano] = dataStr.split('/');
-        return new Date(ano, mes - 1, dia);
+      const str = String(dataStr).trim().split(' ')[0]; 
+      
+      if (str.includes('/')) {
+        const parts = str.split('/');
+        if (parts[2] && parts[2].length === 4) return new Date(parts[2], parts[1] - 1, parts[0]);
+        if (parts[0] && parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
       }
-      if (dataStr.includes('-')) {
-        const [ano, mes, dia] = dataStr.split('-');
-        return new Date(ano, mes - 1, dia);
+      if (str.includes('-')) {
+        const parts = str.split('-');
+        if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
+        return new Date(parts[2], parts[1] - 1, parts[0]);
       }
-      return new Date(dataStr);
+      
+      if (!isNaN(str) && Number(str) > 10000) {
+        const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+        return new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
+      }
+
+      return new Date(str);
     };
 
     const inicio = converterData(dataInicio);
     const fim = converterData(dataFim);
 
-    if (isNaN(inicio) || isNaN(fim)) return { texto: "Data inválida", anos: 0, meses: 0, dias: 0 };
-    if (fim < inicio) return { texto: "Data de desligamento inválida", anos: 0, meses: 0, dias: 0 };
+    if (isNaN(inicio) || isNaN(fim)) return { texto: "Data não identificada", anos: 0, meses: 0, dias: 0 };
+    if (fim < inicio) return { texto: "Desligamento anterior ao início", anos: 0, meses: 0, dias: 0 };
 
     let anos = fim.getFullYear() - inicio.getFullYear();
     let meses = fim.getMonth() - inicio.getMonth();
@@ -135,140 +319,223 @@ export default function App() {
     setErroPesquisa('');
     setResultado(null);
 
-    const limparDocumento = (doc) => doc ? doc.toString().replace(/\D/g, '') : '';
     const cpfDigitado = limparDocumento(cpfBusca);
 
     if (!cpfDigitado || !dataDesligamento) { setErroPesquisa('Preencha o CPF e a Data de Rescisão.'); return; }
-    if (baseSistema.length === 0) { setErroPesquisa('Nenhuma base de dados carregada.'); return; }
+    if (faturaSaude.length === 0 && faturaDental.length === 0) { setErroPesquisa('As faturas de Saúde e/ou Dental precisam estar carregadas.'); return; }
 
-    const cadastro = baseSistema.find(f => limparDocumento(f.cpf) === cpfDigitado);
-    if (!cadastro) { setErroPesquisa('Colaborador não encontrado na Base do Sistema.'); return; }
+    const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
+    const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
+    const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
 
-    const saude = faturaSaude.find(f => limparDocumento(f.cpf) === cpfDigitado);
-    const dental = faturaDental.find(f => limparDocumento(f.cpf) === cpfDigitado);
+    if (!cadastro && !saude && !dental) { setErroPesquisa('Colaborador não encontrado em nenhuma das bases carregadas.'); return; }
 
-    const extrairDataInicio = (registro) => {
-      if (!registro) return null;
-      const chaves = ['inicio', 'início', 'data de inicio', 'data inicio', 'vigencia', 'vigência', 'inclusão', 'inclusao', 'inicio plano'];
-      for (let chave of chaves) { if (registro[chave]) return registro[chave]; }
-      return null;
-    };
+    const nomeEncontrado = extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
 
     const inicioSaude = extrairDataInicio(saude);
     const inicioDental = extrairDataInicio(dental);
+    const admissaoEncontrada = extrairAdmissao(cadastro);
 
     setResultado({
-      nome: cadastro.nome,
-      admissao: cadastro.admissao,
-      saude: saude ? { ativo: true, carteirinha: saude.carteirinha, inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataDesligamento) } : { ativo: false },
-      dental: dental ? { ativo: true, carteirinha: dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false }
+      nome: nomeEncontrado,
+      admissao: formatarDataApresentacao(admissaoEncontrada) || 'Não informado na Base',
+      saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude) || saude.carteirinha, inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataDesligamento) } : { ativo: false },
+      dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental) || dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false }
     });
     
     setManterSaude(!!saude);
     setManterDental(!!dental);
   };
 
+  const handleProcessarLote = () => {
+    if (loteDesligamentos.length === 0) return;
+    if (faturaSaude.length === 0 && faturaDental.length === 0) {
+      setAlertaGlobal("⚠️ Carregue as faturas de Saúde e/ou Dental antes de processar o lote.");
+      return;
+    }
+
+    const novosRegistros = loteDesligamentos.map((registro, index) => {
+      const chaves = Object.keys(registro);
+      const cpfDigitado = limparDocumento(extrairCpf(registro));
+
+      const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
+      let dataRaw = dataKey ? registro[dataKey] : '';
+      
+      let dataApresentacao = dataRaw;
+      if (dataRaw.includes('-')) {
+        const parts = dataRaw.split('-');
+        if (parts[0].length === 4) dataApresentacao = `${parts[2]}/${parts[1]}/${parts[0]}`; 
+      }
+
+      const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
+      const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
+      const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
+
+      let nome = extrairNome(registro) || extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
+      const temPlano = !!saude || !!dental;
+
+      const inicioSaude = extrairDataInicio(saude);
+      const inicioDental = extrairDataInicio(dental);
+      
+      const admissaoRaw = extrairAdmissao(cadastro) || extrairAdmissao(registro);
+      const admissao = formatarDataApresentacao(admissaoRaw) || 'Não informado na Base';
+
+      const diasPassados = calcularDiasDesdeRescisao(dataApresentacao);
+      let obsAutomatica = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Não possuía plano ativo nas faturas.';
+      
+      if (temPlano && diasPassados > 30) {
+        obsAutomatica = `⛔ Passaram ${diasPassados} dias da rescisão (prazo 30 dias). Exclusão obrigatória (perda do direito).`;
+      }
+
+      const novoItem = {
+        id: Date.now() + index,
+        dataGeracao: new Date().toLocaleString('pt-BR'),
+        nome: nome,
+        cpf: cpfDigitado,
+        dataRescisao: dataApresentacao,
+        admissao: admissao,
+        motivo: 'sem_justa_causa', 
+        saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude), inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataRaw) } : { ativo: false },
+        dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental), inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataRaw) } : { ativo: false },
+        status: temPlano ? 'Pendente de Exclusão' : 'Sem plano ativo (Baixa automática)',
+        dataEntrega: '',
+        emailHp: '',
+        observacao: obsAutomatica,
+        pdfUrl: null
+      };
+      
+      salvarNoFirestore(novoItem);
+      return novoItem;
+    });
+
+    setHistorico(prev => [...novosRegistros, ...prev].sort((a, b) => b.id - a.id));
+    setSucessoMsg(`Lote processado e salvo na nuvem com sucesso! ${novosRegistros.length} colaboradores verificados.`);
+    setLoteDesligamentos([]);
+  };
+
+  const preencherEBuscar = (cpf, dataResc) => {
+    setCpfBusca(cpf);
+    if (dataResc && dataResc.includes('/')) {
+      const [d, m, y] = dataResc.split('/');
+      if (y && m && d) setDataDesligamento(`${y}-${m}-${d}`);
+    } else if (dataResc && dataResc.includes('-')) {
+      setDataDesligamento(dataResc);
+    }
+    
+    setSucessoMsg("Dados preenchidos na busca! Selecione a Regra ANS e gere o espelho.");
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+
   // ==========================================
-  // 4. MOTOR DE GERAÇÃO DO PDF (ESPELHO SIMPLES)
+  // 4. MOTOR DE GERAÇÃO DO PDF (ESPELHO)
   // ==========================================
+  const construtorDePdf = async (dadosPdf) => {
+    const { nome, cpf, admissao, dataRescisao, motivo, saude, dental } = dadosPdf;
+    
+    if (!window.PDFLib) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("Falha ao carregar a biblioteca de PDF."));
+        document.head.appendChild(script);
+      });
+    }
+
+    const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.28, 841.89]); 
+    
+    const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    let yOffset = 800;
+    const margemEsq = 50;
+
+    const escrever = (texto, size = 12, isBold = false, cor = rgb(0.2, 0.2, 0.2)) => {
+      page.drawText(texto || '', { x: margemEsq, y: yOffset, size, font: isBold ? fontBold : fontNormal, color: cor });
+      yOffset -= (size + 10);
+    };
+
+    const escreverLinha = (label, valor) => {
+      page.drawText(label, { x: margemEsq, y: yOffset, size: 12, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
+      page.drawText(valor || 'Não informado', { x: margemEsq + 180, y: yOffset, size: 12, font: fontNormal, color: rgb(0, 0, 0) });
+      yOffset -= 22;
+    };
+
+    escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0, 0.2, 0.6));
+    escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5, 0.5, 0.5));
+    yOffset -= 20;
+
+    escrever('DADOS DO COLABORADOR', 14, true, rgb(0, 0, 0));
+    yOffset -= 5;
+    escreverLinha('Nome Completo:', nome);
+    escreverLinha('CPF:', cpf);
+    escreverLinha('Data de Admissão:', admissao);
+    escreverLinha('Data de Rescisão:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
+    
+    const motivosFormatados = {
+      'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
+      'sem_justa_causa': 'Demissão/exoneração sem justa causa',
+      'com_justa_causa': 'Demissão por justa causa',
+      'aposentadoria': 'Aposentadoria'
+    };
+    escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo] || motivosFormatados['sem_justa_causa']);
+    
+    yOffset -= 20;
+
+    escrever('PLANO AMIL SAÚDE', 14, true, rgb(0, 0, 0));
+    yOffset -= 5;
+    if (saude && saude.ativo) {
+      escreverLinha('Carteirinha:', saude.carteirinha);
+      escreverLinha('Data de Início no Plano:', saude.inicioPlano);
+      escreverLinha('Tempo de Contribuição:', saude.tempo?.texto);
+      escreverLinha('Fracionado:', `${saude.tempo?.anos} Anos | ${saude.tempo?.meses} Meses | ${saude.tempo?.dias} Dias`);
+    } else {
+      escrever('Não possui plano de saúde ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
+    }
+
+    yOffset -= 20;
+
+    escrever('PLANO AMIL DENTAL', 14, true, rgb(0, 0, 0));
+    yOffset -= 5;
+    if (dental && dental.ativo) {
+      escreverLinha('Carteirinha:', dental.carteirinha);
+      escreverLinha('Data de Início no Plano:', dental.inicioPlano);
+      escreverLinha('Tempo de Contribuição:', dental.tempo?.texto);
+      escreverLinha('Fracionado:', `${dental.tempo?.anos} Anos | ${dental.tempo?.meses} Meses | ${dental.tempo?.dias} Dias`);
+    } else {
+      escrever('Não possui plano dental ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
+    }
+
+    yOffset = 50;
+    escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-BR'), 9, false, rgb(0.6, 0.6, 0.6));
+
+    const dataUri = await pdfDoc.saveAsBase64({ dataUri: true });
+    return dataUri; 
+  };
+
   const handleGerarPDF = async () => {
     if (!motivo) { 
-      alert("⚠️ Regra da ANS não selecionada! Por favor, escolha o motivo da rescisão."); 
+      setAlertaGlobal("⚠️ Regra da ANS não selecionada! Por favor, escolha o motivo da rescisão."); 
       return; 
     }
 
     setGerandoPdf(true);
     try {
-      if (!window.PDFLib) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-          script.onload = resolve;
-          script.onerror = () => reject(new Error("Falha ao carregar a biblioteca de PDF."));
-          document.head.appendChild(script);
-        });
-      }
+      const dataUri = await construtorDePdf({
+        nome: resultado.nome,
+        cpf: cpfBusca,
+        admissao: resultado.admissao,
+        dataRescisao: dataDesligamento,
+        motivo: motivo,
+        saude: manterSaude ? resultado.saude : { ativo: false },
+        dental: manterDental ? resultado.dental : { ativo: false }
+      });
 
-      const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595.28, 841.89]); // A4
-      
-      const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      
-      let yOffset = 800;
-      const margemEsq = 50;
-
-      const escrever = (texto, size = 12, isBold = false, cor = rgb(0.2, 0.2, 0.2)) => {
-        page.drawText(texto || '', { x: margemEsq, y: yOffset, size, font: isBold ? fontBold : fontNormal, color: cor });
-        yOffset -= (size + 10);
-      };
-
-      const escreverLinha = (label, valor) => {
-        page.drawText(label, { x: margemEsq, y: yOffset, size: 12, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
-        page.drawText(valor || 'Não informado', { x: margemEsq + 180, y: yOffset, size: 12, font: fontNormal, color: rgb(0, 0, 0) });
-        yOffset -= 22;
-      };
-
-      // Título
-      escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0, 0.2, 0.6));
-      escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5, 0.5, 0.5));
-      yOffset -= 20;
-
-      // Dados do Colaborador
-      escrever('DADOS DO COLABORADOR', 14, true, rgb(0, 0, 0));
-      yOffset -= 5;
-      escreverLinha('Nome Completo:', resultado.nome);
-      escreverLinha('CPF:', cpfBusca);
-      escreverLinha('Data de Admissão:', resultado.admissao);
-      escreverLinha('Data de Rescisão:', dataDesligamento.split('-').reverse().join('/'));
-      
-      const motivosFormatados = {
-        'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
-        'sem_justa_causa': 'Demissão/exoneração sem justa causa',
-        'com_justa_causa': 'Demissão por justa causa',
-        'aposentadoria': 'Aposentadoria'
-      };
-      escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo]);
-      
-      yOffset -= 20;
-
-      // Saúde
-      escrever('PLANO AMIL SAÚDE', 14, true, rgb(0, 0, 0));
-      yOffset -= 5;
-      if (resultado.saude.ativo && manterSaude) {
-        escreverLinha('Carteirinha:', resultado.saude.carteirinha);
-        escreverLinha('Data de Início no Plano:', resultado.saude.inicioPlano);
-        escreverLinha('Tempo de Contribuição:', resultado.saude.tempo?.texto);
-        escreverLinha('Fracionado:', `${resultado.saude.tempo?.anos} Anos | ${resultado.saude.tempo?.meses} Meses | ${resultado.saude.tempo?.dias} Dias`);
-      } else {
-        escrever('Não possui plano de saúde ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
-      }
-
-      yOffset -= 20;
-
-      // Dental
-      escrever('PLANO AMIL DENTAL', 14, true, rgb(0, 0, 0));
-      yOffset -= 5;
-      if (resultado.dental.ativo && manterDental) {
-        escreverLinha('Carteirinha:', resultado.dental.carteirinha);
-        escreverLinha('Data de Início no Plano:', resultado.dental.inicioPlano);
-        escreverLinha('Tempo de Contribuição:', resultado.dental.tempo?.texto);
-        escreverLinha('Fracionado:', `${resultado.dental.tempo?.anos} Anos | ${resultado.dental.tempo?.meses} Meses | ${resultado.dental.tempo?.dias} Dias`);
-      } else {
-        escrever('Não possui plano dental ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
-      }
-
-      // Rodapé
-      yOffset = 50;
-      escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-BR'), 9, false, rgb(0.6, 0.6, 0.6));
-
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob); // URL gerada para download
-      
       const a = document.createElement('a');
-      a.href = url;
+      a.href = dataUri;
       a.download = `Espelho_Amil_${resultado.nome.replace(/\s+/g, '_')}.pdf`;
       document.body.appendChild(a);
       a.click();
@@ -276,24 +543,73 @@ export default function App() {
 
       setSucessoMsg(`Espelho de dados de ${resultado.nome} gerado com sucesso!`);
       
-      // Adiciona ao Histórico, salvando o link do PDF e o campo de observação
-      const novoRegistro = {
-        id: Date.now(),
-        dataGeracao: new Date().toLocaleString('pt-BR'),
-        nome: resultado.nome,
-        cpf: cpfBusca,
-        dataRescisao: dataDesligamento.split('-').reverse().join('/'),
-        status: 'Gerado (Aguardando ação)',
-        dataEntrega: '',
-        emailHp: '',
-        observacao: '',
-        pdfUrl: url // <-- PDF salvo aqui para download posterior
-      };
-      setHistorico(prev => [novoRegistro, ...prev]);
+      const indexPendente = historico.findIndex(h => h.cpf === cpfBusca && h.status === 'Pendente de Exclusão');
+      
+      if (indexPendente !== -1) {
+        const itemExistente = historico[indexPendente];
+        const novoRegistro = {
+            ...itemExistente,
+            status: 'Gerado (Aguardando ação)',
+            dataGeracao: new Date().toLocaleString('pt-BR'),
+            pdfUrl: dataUri,
+            observacao: 'Espelho de exclusão gerado.'
+        };
+        setHistorico(prev => prev.map(h => h.id === itemExistente.id ? novoRegistro : h));
+        salvarNoFirestore(novoRegistro);
+      } else {
+        const novoRegistro = {
+          id: Date.now(),
+          dataGeracao: new Date().toLocaleString('pt-BR'),
+          nome: resultado.nome,
+          cpf: cpfBusca,
+          dataRescisao: dataDesligamento.split('-').reverse().join('/'),
+          status: 'Gerado (Aguardando ação)',
+          dataEntrega: '',
+          emailHp: '',
+          observacao: '',
+          pdfUrl: dataUri 
+        };
+        setHistorico(prev => [novoRegistro, ...prev]);
+        salvarNoFirestore(novoRegistro);
+      }
 
     } catch (error) {
       console.error("Erro interno do PDF:", error);
-      alert("Ocorreu um erro ao gerar o relatório. Verifique sua conexão.");
+      setAlertaGlobal("Ocorreu um erro ao gerar o relatório. Verifique os dados fornecidos.");
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
+  const handleGerarPdfDaLinha = async (item) => {
+    setGerandoPdf(true);
+    try {
+      const dataUri = await construtorDePdf({
+        nome: item.nome,
+        cpf: item.cpf,
+        admissao: item.admissao,
+        dataRescisao: item.dataRescisao,
+        motivo: item.motivo || 'sem_justa_causa',
+        saude: item.saude,
+        dental: item.dental
+      });
+
+      const a = document.createElement('a');
+      a.href = dataUri;
+      a.download = `Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setSucessoMsg(`Espelho de ${item.nome} gerado com sucesso!`);
+      
+      atualizarHistorico(item.id, 'pdfUrl', dataUri);
+      atualizarHistorico(item.id, 'status', 'Gerado (Aguardando ação)');
+      atualizarHistorico(item.id, 'observacao', 'Espelho gerado em lote.');
+
+    } catch (error) {
+      console.error("Erro ao gerar PDF da linha:", error);
+      setAlertaGlobal("Erro ao gerar PDF. Verifique os dados.");
     } finally {
       setGerandoPdf(false);
     }
@@ -303,72 +619,125 @@ export default function App() {
   // 5. ATUALIZAÇÃO DO HISTÓRICO
   // ==========================================
   const atualizarHistorico = (id, campo, valor) => {
-    setHistorico(prev => 
-      prev.map(item => item.id === id ? { ...item, [campo]: valor } : item)
-    );
+    const itemAtualizado = historico.find(item => item.id === id);
+    if (itemAtualizado) {
+      const novoItem = { ...itemAtualizado, [campo]: valor };
+      setHistorico(prev => prev.map(item => item.id === id ? novoItem : item));
+      salvarNoFirestore(novoItem);
+    }
   };
 
   const salvarAlteracoes = () => {
     setSucessoMsg('Alterações e regras de SLA salvas com sucesso!');
   };
 
+  // ==========================================
+  // LÓGICA DE FILTRAGEM POR PERÍODO
+  // ==========================================
+  const historicoFiltrado = useMemo(() => {
+    if (!filtroPeriodo) return historico;
+    
+    return historico.filter(item => {
+      if (!item.dataRescisao) return false;
+      let mes, ano;
+      
+      // Extrai o mês e ano dependendo do formato da data (DD/MM/YYYY ou YYYY-MM-DD)
+      if (item.dataRescisao.includes('/')) {
+        const partes = item.dataRescisao.split('/');
+        if (partes.length >= 3) {
+          mes = partes[1];
+          ano = partes[2];
+        }
+      } else if (item.dataRescisao.includes('-')) {
+        const partes = item.dataRescisao.split('-');
+        if (partes[0].length === 4) {
+          ano = partes[0];
+          mes = partes[1];
+        } else {
+          ano = partes[2];
+          mes = partes[1];
+        }
+      }
+      
+      if (!mes || !ano) return false;
+      return `${ano}-${mes}` === filtroPeriodo;
+    });
+  }, [historico, filtroPeriodo]);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
       <div className="max-w-6xl mx-auto space-y-6">
         
         {/* ALERTAS GLOBAIS FLUTUANTES */}
+        {alertaGlobal && (
+          <div className="fixed top-4 right-4 z-50 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5 max-w-md">
+            <p className="font-medium flex items-start gap-2"><AlertCircle size={20} className="shrink-0 mt-0.5"/> {alertaGlobal}</p>
+          </div>
+        )}
         {sucessoMsg && (
           <div className="fixed top-4 right-4 z-50 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5">
             <p className="font-medium flex items-center gap-2"><CheckCircle size={18}/> {sucessoMsg}</p>
           </div>
         )}
 
-        {/* CABEÇALHO ATUALIZADO */}
+        {/* CABEÇALHO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
               <FileText className="text-blue-600" /> Exclusões AMIL
             </h1>
-            <p className="text-gray-500 text-sm mt-1">Geração de relatórios com cálculos exatos de permanência</p>
+            <p className="text-gray-500 text-sm mt-1 flex items-center gap-2">
+              Geração de relatórios com cálculos exatos de permanência
+              {salvando ? (
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse"><Cloud size={12}/> Salvando...</span>
+              ) : (
+                user && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Cloud size={12}/> Salvo na Nuvem</span>
+              )}
+            </p>
           </div>
           
-          {/* BOTÕES DE AÇÃO GLOBAIS */}
+          {/* BOTÕES DE AÇÃO GLOBAIS - DOWNLOAD DINÂMICO */}
           <div className="flex flex-wrap gap-2">
             {pdfOficialUrl ? (
               <a 
                 href={pdfOficialUrl} 
                 download={pdfOficialNome || "FORMULARIO_AMIL_EXCLUSAO.pdf"}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm font-bold whitespace-nowrap"
+                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow text-sm font-bold whitespace-nowrap"
                 title="Baixar o arquivo em branco anexado"
               >
-                <Download size={16} /> Baixar Formulário Oficial
+                <Download size={18} /> Baixar Formulário Oficial
               </a>
             ) : (
               <button 
                 disabled
-                className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-bold whitespace-nowrap"
+                className="flex items-center gap-2 px-6 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-bold whitespace-nowrap"
                 title="Anexe o formulário primeiro para poder baixar"
               >
-                <Download size={16} /> Baixar Formulário Oficial
+                <Download size={18} /> Baixar Formulário Oficial
               </button>
             )}
-            
-            <label className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium whitespace-nowrap cursor-pointer">
+
+            <label className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium whitespace-nowrap cursor-pointer shadow-sm">
               <UploadCloud size={16} /> {pdfOficialUrl ? 'Substituir Formulário' : 'Anexar Formulário'}
               <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadPdfOficial} />
             </label>
           </div>
         </div>
 
-        {/* ÁREA DE ABASTECIMENTO (FECHADA POR PADRÃO) */}
+        {/* ÁREA DE ABASTECIMENTO */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <button 
             onClick={() => setMostrarAbastecimento(!mostrarAbastecimento)}
             className="w-full p-6 flex items-center justify-between hover:bg-gray-50 transition-colors"
           >
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <UploadCloud className="text-gray-400" /> 1. Arquivos de Origem (.CSV)
-            </h2>
+            <div className="flex flex-col items-start">
+              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <UploadCloud className="text-gray-400" /> 1. Arquivos de Origem (.CSV)
+              </h2>
+              <p className="text-xs text-orange-600 mt-1 font-medium bg-orange-50 px-2 py-0.5 rounded">
+                ⚠️ Por segurança, os arquivos de planilhas não são salvos na nuvem. Recarregue-os a cada nova sessão.
+              </p>
+            </div>
             <div className="text-gray-500 bg-gray-100 p-1.5 rounded-full">
               {mostrarAbastecimento ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </div>
@@ -376,9 +745,9 @@ export default function App() {
 
           {mostrarAbastecimento && (
             <div className="p-6 pt-0 border-t border-gray-100 animate-in slide-in-from-top-2 duration-200">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                 <div className={`p-4 rounded-lg border-2 border-dashed ${baseSistema.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Base RH (Sistema)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Base RH (Opcional)</label>
                   <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setBaseSistema)} className="text-xs w-full" />
                 </div>
                 <div className={`p-4 rounded-lg border-2 border-dashed ${faturaSaude.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
@@ -388,6 +757,12 @@ export default function App() {
                 <div className={`p-4 rounded-lg border-2 border-dashed ${faturaDental.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Dental</label>
                   <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaDental)} className="text-xs w-full" />
+                </div>
+                {/* CAMPO DE LOTE */}
+                <div className={`p-4 rounded-lg border-2 border-dashed ${loteDesligamentos.length > 0 ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-50'}`}>
+                  <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><ListChecks size={16}/> Lote de Desligamentos</label>
+                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setLoteDesligamentos)} className="text-xs w-full" />
+                  <p className="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática.</p>
                 </div>
               </div>
             </div>
@@ -399,6 +774,7 @@ export default function App() {
           <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
             <Search className="text-gray-400" /> 2. Buscar e Calcular
           </h2>
+          
           <div className="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
@@ -413,13 +789,26 @@ export default function App() {
             </button>
           </div>
           {erroPesquisa && <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200"><AlertCircle size={16} /> {erroPesquisa}</div>}
+
+          {/* ÁREA DE BOTÃO PARA O LOTE QUANDO CARREGADO */}
+          {loteDesligamentos.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-50 p-4 rounded-lg border border-purple-100 gap-4 animate-in fade-in">
+              <div>
+                <h3 className="font-semibold text-purple-800 flex items-center gap-2"><ListChecks size={18}/> Processamento Automático (Triagem)</h3>
+                <p className="text-sm text-purple-600 mt-1">Encontrados <strong>{loteDesligamentos.length} colaboradores</strong> na planilha de desligamentos.</p>
+              </div>
+              <button onClick={handleProcessarLote} className="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto">
+                Realizar Triagem em Lote
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ESPELHO DE RESULTADOS */}
         {resultado && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
             
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-4">
               <div>
                 <h3 className="text-xl font-bold text-gray-800">{resultado.nome}</h3>
                 <p className="text-sm text-gray-500">CPF: {cpfBusca} • Demissão: {dataDesligamento.split('-').reverse().join('/')}</p>
@@ -433,6 +822,26 @@ export default function App() {
                   <option value="aposentadoria">Aposentadoria</option>
                 </select>
               </div>
+            </div>
+
+            {/* AVALIAÇÃO DE REGRAS DE NEGÓCIO DA ANS */}
+            <div className="mb-6 space-y-2">
+              {calcularDiasDesdeRescisao(dataDesligamento) > 30 && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
+                  <AlertTriangle size={18} className="shrink-0" />
+                  <div>
+                    <strong>Atenção:</strong> Já se passaram <strong>{calcularDiasDesdeRescisao(dataDesligamento)} dias</strong> da rescisão. O prazo máximo legal de 30 dias expirou. <u>Proceda com a exclusão obrigatória</u>.
+                  </div>
+                </div>
+              )}
+              {motivo && motivo !== 'sem_justa_causa' && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
+                  <AlertTriangle size={18} className="shrink-0" />
+                  <div>
+                    <strong>Atenção:</strong> O direito de manutenção aplica-se apenas a demissões "Sem Justa Causa". <u>Proceda com a exclusão obrigatória</u>.
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -499,11 +908,40 @@ export default function App() {
 
         {/* ÁREA DE HISTÓRICO - CONTROLE DE MOVIMENTAÇÕES AMIL */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-            <Clock className="text-blue-600" /> 3. Controle de Movimentações Amil
-          </h2>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              <Clock className="text-blue-600" /> 3. Controle de Movimentações Amil
+            </h2>
+            
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
+              {/* FILTRO DE PERÍODO */}
+              <div className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                <label className="text-sm font-medium text-gray-600 whitespace-nowrap">Filtrar Mês:</label>
+                <input
+                  type="month"
+                  value={filtroPeriodo}
+                  onChange={(e) => setFiltroPeriodo(e.target.value)}
+                  className="p-1.5 border border-gray-300 rounded text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+                {filtroPeriodo && (
+                  <button onClick={() => setFiltroPeriodo('')} className="text-xs text-red-500 hover:text-red-700 font-medium px-2">
+                    Limpar
+                  </button>
+                )}
+              </div>
+
+              {historicoFiltrado.length > 0 && (
+                <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
+                  <AlertCircle size={18} /> Pendências: {historicoFiltrado.filter(h => h.status === 'Pendente de Exclusão').length}
+                </div>
+              )}
+            </div>
+          </div>
+          
           {historico.length === 0 ? (
             <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controle gerado nesta sessão.</p>
+          ) : historicoFiltrado.length === 0 ? (
+            <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhuma movimentação encontrada para o período selecionado.</p>
           ) : (
             <div className="overflow-x-auto pb-4">
               <table className="w-full text-sm text-left text-gray-600">
@@ -516,8 +954,18 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historico.map((item) => {
-                    const temAtraso = item.status !== 'Exclusão processada' && verificarAtraso(item.dataRescisao, item.dataEntrega);
+                  {[...historicoFiltrado].sort((a, b) => {
+                    const aSem = a.status === 'Sem plano ativo (Baixa automática)';
+                    const bSem = b.status === 'Sem plano ativo (Baixa automática)';
+                    if (aSem && !bSem) return 1;
+                    if (!aSem && bSem) return -1;
+                    return 0;
+                  }).map((item) => {
+                    const temAtraso = !['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && verificarAtraso(item.dataRescisao, item.dataEntrega);
+                    const planoAtivo = item.status !== 'Sem plano ativo (Baixa automática)';
+                    const diasPassadosRescisao = calcularDiasDesdeRescisao(item.dataRescisao);
+                    const perdeuPrazo30Dias = planoAtivo && diasPassadosRescisao > 30;
+                    const semDireitoMotivo = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa';
 
                     return (
                       <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/30">
@@ -535,17 +983,61 @@ export default function App() {
                               value={item.status}
                               onChange={(e) => atualizarHistorico(item.id, 'status', e.target.value)}
                               className={`flex-1 p-2 border rounded text-sm outline-none font-medium ${
-                                item.status === 'Exclusão processada' ? 'bg-green-100 text-green-800 border-green-300' :
-                                item.status === 'Gerado (Aguardando ação)' ? 'bg-gray-100 text-gray-600 border-gray-300' :
+                                item.status === 'Exclusão processada' || item.status === 'Sem plano ativo (Baixa automática)' ? 'bg-green-100 text-green-800 border-green-300' :
+                                item.status === 'Gerado (Aguardando ação)' || item.status === 'Pendente de Exclusão' ? 'bg-gray-100 text-gray-600 border-gray-300' :
                                 'bg-blue-50 text-blue-800 border-blue-300'
                               }`}
                             >
+                              <option value="Pendente de Exclusão">Pendente de Exclusão</option>
                               <option value="Gerado (Aguardando ação)">Gerado (Aguardando ação)</option>
                               <option value="Preenchido e assinado">Preenchido e assinado</option>
                               <option value="Enviado para o colaborador">Enviado para o colaborador</option>
                               <option value="Encaminhado para hphealth">Encaminhado para hphealth</option>
                               <option value="Exclusão processada">Exclusão processada</option>
+                              <option value="Sem plano ativo (Baixa automática)">Sem plano ativo (Baixa automática)</option>
                             </select>
+
+                            {/* BOTÃO AVALIAR / GERAR DIRETO */}
+                            {item.status === 'Pendente de Exclusão' && !item.pdfUrl && (
+                              <div className="flex flex-col gap-1">
+                                <div className="flex gap-1">
+                                  <select 
+                                    value={item.motivo || 'sem_justa_causa'}
+                                    onChange={(e) => atualizarHistorico(item.id, 'motivo', e.target.value)}
+                                    className="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28"
+                                    title="Motivo da Rescisão"
+                                  >
+                                    <option value="pedido_demissao">Pedido Dem.</option>
+                                    <option value="sem_justa_causa">Sem Justa</option>
+                                    <option value="com_justa_causa">Com Justa</option>
+                                    <option value="aposentadoria">Aposent.</option>
+                                  </select>
+                                  <button 
+                                    onClick={() => handleGerarPdfDaLinha(item)}
+                                    disabled={gerandoPdf}
+                                    className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded px-3 transition-colors text-xs font-bold gap-1 shadow-sm whitespace-nowrap"
+                                    title="Gerar Espelho com dados do Lote"
+                                  >
+                                    <FileText size={14} /> Gerar PDF
+                                  </button>
+                                  <button 
+                                    onClick={() => preencherEBuscar(item.cpf, item.dataRescisao)}
+                                    className="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded transition-colors text-xs font-bold"
+                                    title="Avaliar manualmente na Busca"
+                                  >
+                                    <Search size={14} />
+                                  </button>
+                                </div>
+                                
+                                {/* AVISOS VISUAIS DE REGRA DE NEGÓCIO NA TABELA */}
+                                {(perdeuPrazo30Dias || semDireitoMotivo) && (
+                                  <div className="mt-1 space-y-0.5">
+                                    {perdeuPrazo30Dias && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Passou de 30 dias. Exclusão.</div>}
+                                    {semDireitoMotivo && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Motivo sem direito à manutenção.</div>}
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* BOTÃO DOWNLOAD PDF DIRETO */}
                             {item.pdfUrl && (
@@ -560,7 +1052,7 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* ALERTA DE ATRASO (> 10 DIAS DA RESCISÃO) */}
+                          {/* ALERTA DE ATRASO */}
                           {temAtraso && (
                             <div className="mb-3 px-2 py-1.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-semibold flex items-center gap-1.5">
                               <AlertTriangle size={14} /> Atenção: Prazo de entrega (SLA 10 dias) expirado!
@@ -568,7 +1060,6 @@ export default function App() {
                           )}
 
                           <div className="grid grid-cols-1 gap-3">
-                            {/* INPUT CONDICIONAL: ENVIADO PARA O COLABORADOR */}
                             {item.status === 'Enviado para o colaborador' && (
                               <div className="animate-in fade-in slide-in-from-top-1">
                                 <label className="text-xs text-gray-500 mb-1 block">Data da Entrega:</label>
@@ -581,7 +1072,6 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* INPUT CONDICIONAL: ENCAMINHADO PARA HPHEALTH */}
                             {item.status === 'Encaminhado para hphealth' && (
                               <div className="animate-in fade-in slide-in-from-top-1">
                                 <label className="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
@@ -611,11 +1101,11 @@ export default function App() {
                                 value={item.observacao}
                                 onChange={(e) => atualizarHistorico(item.id, 'observacao', e.target.value)}
                                 rows={2}
-                                className="w-full p-2 border border-gray-200 bg-yellow-50/30 rounded text-xs focus:ring-1 focus:ring-yellow-400 outline-none resize-none"
+                                className={`w-full p-2 border bg-yellow-50/30 rounded text-xs focus:ring-1 focus:ring-yellow-400 outline-none resize-none ${item.status === 'Sem plano ativo (Baixa automática)' ? 'border-green-200 bg-green-50/30 focus:ring-green-400' : 'border-gray-200'}`}
                               />
                             </div>
                             
-                            {/* BOTÃO SALVAR PARA CONFORTO DO USUÁRIO */}
+                            {/* BOTÃO SALVAR */}
                             <button 
                               onClick={salvarAlteracoes}
                               className="w-full mt-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-xs font-bold transition-colors border border-gray-300 flex items-center justify-center gap-1.5"

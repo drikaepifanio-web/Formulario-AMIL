@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save, ListChecks, Cloud } from 'lucide-react';
+import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save, ListChecks, Cloud, Archive, Inbox, FileSpreadsheet, Mail, DollarSign, TrendingDown, Calendar, User } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc } from 'firebase/firestore';
@@ -26,33 +26,48 @@ export default function App() {
   const [baseSistema, setBaseSistema] = useState([]);
   const [faturaSaude, setFaturaSaude] = useState([]);
   const [faturaDental, setFaturaDental] = useState([]);
-  const [loteDesligamentos, setLoteDesligamentos] = useState([]); // NOVO ESTADO: Lote da Semana
+  const [loteDesligamentos, setLoteDesligamentos] = useState([]); 
   
   // Controle de Interface
   const [mostrarAbastecimento, setMostrarAbastecimento] = useState(false);
 
+  // Tipos de Movimentação
+  const [tipoMovimento, setTipoMovimento] = useState('exclusao');
+  const [tipoLote, setTipoLote] = useState('exclusao');
+
+  // Estados de Busca e Formulário
   const [cpfBusca, setCpfBusca] = useState('');
-  const [dataDesligamento, setDataDesligamento] = useState('');
+  const [dataDesligamento, setDataDesligamento] = useState(''); 
+  const [motivo, setMotivo] = useState('');
+
+  // Estados Corrigidos (Resultados e Mensagens)
   const [resultado, setResultado] = useState(null);
   const [erroPesquisa, setErroPesquisa] = useState('');
   const [sucessoMsg, setSucessoMsg] = useState('');
-  
-  const [motivo, setMotivo] = useState('');
 
   const [manterSaude, setManterSaude] = useState(true);
   const [manterDental, setManterDental] = useState(true);
   const [gerandoPdf, setGerandoPdf] = useState(false);
   
   const [historico, setHistorico] = useState([]);
+  const [abaAtiva, setAbaAtiva] = useState('pendentes'); 
   
-  // NOVO ESTADO: Autenticação e Alertas
+  // Autenticação e Alertas
   const [user, setUser] = useState(null);
   const [alertaGlobal, setAlertaGlobal] = useState('');
   const [salvando, setSalvando] = useState(false);
   
+  // Identificação do Operador
+  const [operador, setOperador] = useState('');
+  const [showLogin, setShowLogin] = useState(false);
+  const [inputNome, setInputNome] = useState('');
+
   // Estado para o PDF Oficial anexado
   const [pdfOficialUrl, setPdfOficialUrl] = useState(null);
   const [pdfOficialNome, setPdfOficialNome] = useState('');
+
+  // Controle de Atualização Mensal
+  const [mesReferencia, setMesReferencia] = useState('');
 
   useEffect(() => {
     if (sucessoMsg) {
@@ -71,6 +86,32 @@ export default function App() {
   // ==========================================
   // AUTENTICAÇÃO E SINCRONIZAÇÃO (FIREBASE)
   // ==========================================
+  
+  useEffect(() => {
+    const salvo = localStorage.getItem('amil_operador');
+    if (salvo) {
+      setOperador(salvo);
+    } else {
+      setShowLogin(true);
+    }
+  }, []);
+
+  const handleAcessarPainel = () => {
+    if (inputNome.trim().length < 2) {
+      setAlertaGlobal("Por favor, digite seu nome para continuar.");
+      return;
+    }
+    localStorage.setItem('amil_operador', inputNome.trim());
+    setOperador(inputNome.trim());
+    setShowLogin(false);
+  };
+
+  const handleTrocarOperador = () => {
+    localStorage.removeItem('amil_operador');
+    setInputNome(operador);
+    setShowLogin(true);
+  };
+
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => {
@@ -92,9 +133,6 @@ export default function App() {
   useEffect(() => {
     if (!user || !db) return;
     
-    // MUDANÇA: Usando o banco de dados Público atrelado ao Link (appId).
-    // Assim, se você fechar o navegador, limpar cookies, ou mandar o link para um colega, 
-    // os dados da Tabela de Movimentações continuam lá!
     const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'historicoAmil');
     const unsubscribe = onSnapshot(
       colRef,
@@ -108,7 +146,6 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // NOVO: Carrega o Formulário PDF Oficial salvo na nuvem
   useEffect(() => {
     if (!user || !db) return;
     const loadConfig = async () => {
@@ -120,6 +157,9 @@ export default function App() {
           if (data.pdfOficialBase64) {
             setPdfOficialUrl(data.pdfOficialBase64);
             setPdfOficialNome(data.pdfOficialNome || 'FORMULARIO_AMIL_EXCLUSAO.pdf');
+          }
+          if (data.mesReferencia) {
+            setMesReferencia(data.mesReferencia); 
           }
         }
       } catch (e) {
@@ -199,6 +239,25 @@ export default function App() {
     }
   };
 
+  const hoje = new Date();
+  const mesAtualCode = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  let nomeMesStr = hoje.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+  const nomeMesAtualFormatado = nomeMesStr.charAt(0).toUpperCase() + nomeMesStr.slice(1);
+  const isDesatualizado = mesReferencia !== mesAtualCode;
+
+  const handleAtualizarMesReferencia = async () => {
+    setMesReferencia(mesAtualCode);
+    setSucessoMsg(`Competência atualizada para ${nomeMesAtualFormatado}! O aviso retornará no próximo mês.`);
+    if (user && db) {
+      try {
+        const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
+        await setDoc(configRef, { mesReferencia: mesAtualCode }, { merge: true });
+      } catch (err) {
+        console.error("Erro ao atualizar mês na nuvem:", err);
+      }
+    }
+  };
+
   const verificarAtraso = (dataRescisao, dataEntrega) => {
     if (!dataRescisao) return false;
     const [d, m, y] = dataRescisao.split('/');
@@ -213,7 +272,6 @@ export default function App() {
     return diferencaDias > 10;
   };
 
-  // NOVO: Cálculo exato de dias passados para a Regra de 30 dias
   const calcularDiasDesdeRescisao = (dataStr) => {
     if (!dataStr) return 0;
     let d, m, y;
@@ -249,10 +307,8 @@ export default function App() {
   const extrairCpf = (reg) => encontrarValor(reg, ['cpf']);
   const extrairCarteirinha = (reg) => encontrarValor(reg, ['carteirinha', 'matricula', 'código', 'codigo']);
   
-  // CORREÇÃO: Ampliação de termos para encontrar a admissão na Base RH
   const extrairAdmissao = (reg) => encontrarValor(reg, ['admiss', 'inicio', 'início', 'contrata', 'entrada']);
   
-  // NOVO: Formatador para datas vindas do Excel, garantindo a exibição perfeita no PDF
   const formatarDataApresentacao = (dataRaw) => {
     if (!dataRaw) return null;
     const str = String(dataRaw).trim().split(' ')[0];
@@ -260,7 +316,6 @@ export default function App() {
       const parts = str.split('-');
       if (parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
-    // Tratamento para números de data do Excel (ex: 44500)
     if (!isNaN(str) && Number(str) > 10000) {
       const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
       const d = new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
@@ -276,10 +331,32 @@ export default function App() {
     return chaveEncontrada ? registro[chaveEncontrada] : null;
   };
 
+  const extrairCusto = (reg) => {
+    if (!reg) return 0;
+    const chavesPossiveis = ['valor', 'custo', 'mensal', 'prêmio', 'premio', 'total'];
+    const chaveEncontrada = Object.keys(reg).find(k => chavesPossiveis.some(p => k.toLowerCase().includes(p)));
+    if (!chaveEncontrada || !reg[chaveEncontrada]) return 0;
+    
+    let strVal = String(reg[chaveEncontrada]).toUpperCase().replace('R$', '').trim();
+    
+    if (strVal.includes(',') && strVal.includes('.')) {
+      strVal = strVal.replace(/\./g, '').replace(',', '.');
+    } else if (strVal.includes(',')) {
+      strVal = strVal.replace(',', '.');
+    }
+    
+    const num = parseFloat(strVal);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const formatarMoeda = (valor) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+  };
+
   const calcularTempo = (dataInicio, dataFim) => {
     const converterData = (dataStr) => {
       if (!dataStr) return new Date('Data Inválida');
-      const str = String(dataStr).trim().split(' ')[0]; // Remove horas caso venha no arquivo
+      const str = String(dataStr).trim().split(' ')[0]; 
       
       if (str.includes('/')) {
         const parts = str.split('/');
@@ -292,7 +369,6 @@ export default function App() {
         return new Date(parts[2], parts[1] - 1, parts[0]);
       }
       
-      // Tentativa de converter formato de data numérico do Excel
       if (!isNaN(str) && Number(str) > 10000) {
         const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
         return new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
@@ -322,7 +398,6 @@ export default function App() {
     return { texto: `${anos} anos, ${meses} meses e ${dias} dias`, anos, meses, dias };
   };
 
-  // BUSCA INDIVIDUAL
   const handleBuscar = () => {
     setErroPesquisa('');
     setResultado(null);
@@ -332,34 +407,32 @@ export default function App() {
     if (!cpfDigitado || !dataDesligamento) { setErroPesquisa('Preencha o CPF e a Data de Rescisão.'); return; }
     if (faturaSaude.length === 0 && faturaDental.length === 0) { setErroPesquisa('As faturas de Saúde e/ou Dental precisam estar carregadas.'); return; }
 
-    // Busca nas bases com extração robusta de CPF
     const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
     const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
     const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
 
     if (!cadastro && !saude && !dental) { setErroPesquisa('Colaborador não encontrado em nenhuma das bases carregadas.'); return; }
 
-    // Extração robusta do nome
     const nomeEncontrado = extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
-
     const inicioSaude = extrairDataInicio(saude);
     const inicioDental = extrairDataInicio(dental);
-    
-    // CORREÇÃO: Aplica a extração de admissão com o formatador
     const admissaoEncontrada = extrairAdmissao(cadastro);
+    const custoSaude = extrairCusto(saude);
+    const custoDental = extrairCusto(dental);
 
     setResultado({
       nome: nomeEncontrado,
+      tipo: tipoMovimento, 
       admissao: formatarDataApresentacao(admissaoEncontrada) || 'Não informado na Base',
       saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude) || saude.carteirinha, inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataDesligamento) } : { ativo: false },
-      dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental) || dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false }
+      dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental) || dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false },
+      custoTotal: custoSaude + custoDental
     });
     
     setManterSaude(!!saude);
     setManterDental(!!dental);
   };
 
-  // PROCESSAMENTO EM LOTE (NOVO)
   const handleProcessarLote = () => {
     if (loteDesligamentos.length === 0) return;
     if (faturaSaude.length === 0 && faturaDental.length === 0) {
@@ -367,23 +440,28 @@ export default function App() {
       return;
     }
 
-    const novosRegistros = loteDesligamentos.map((registro, index) => {
+    let duplicadosCount = 0;
+    const novosRegistros = [];
+
+    loteDesligamentos.forEach((registro, index) => {
       const chaves = Object.keys(registro);
-      
       const cpfDigitado = limparDocumento(extrairCpf(registro));
 
-      // Procura a chave de data de rescisão (ampliando para termos como demissão, saída)
+      const jaExiste = historico.some(h => limparDocumento(h.cpf) === cpfDigitado);
+      if (jaExiste) {
+        duplicadosCount++;
+        return; 
+      }
+
       const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
       let dataRaw = dataKey ? registro[dataKey] : '';
       
-      // Formata YYYY-MM-DD para DD/MM/YYYY se necessário para apresentação
       let dataApresentacao = dataRaw;
       if (dataRaw.includes('-')) {
         const parts = dataRaw.split('-');
         if (parts[0].length === 4) dataApresentacao = `${parts[2]}/${parts[1]}/${parts[0]}`; 
       }
 
-      // Busca dados nas faturas e base
       const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
       const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
       const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
@@ -391,50 +469,54 @@ export default function App() {
       let nome = extrairNome(registro) || extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
       const temPlano = !!saude || !!dental;
 
-      // PREPARA DADOS PARA O PDF AUTOMÁTICO NA TABELA
       const inicioSaude = extrairDataInicio(saude);
       const inicioDental = extrairDataInicio(dental);
-      
-      // CORREÇÃO: Aplica a extração formatada para o lote
+      const custoSaude = extrairCusto(saude);
+      const custoDental = extrairCusto(dental);
       const admissaoRaw = extrairAdmissao(cadastro) || extrairAdmissao(registro);
       const admissao = formatarDataApresentacao(admissaoRaw) || 'Não informado na Base';
-
       const diasPassados = calcularDiasDesdeRescisao(dataApresentacao);
-      let obsAutomatica = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Não possuía plano ativo nas faturas.';
       
-      // Aplica a regra de 30 dias direto na observação do lote
-      if (temPlano && diasPassados > 30) {
+      let obsAutomatica = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Validado na fatura.';
+      
+      if (tipoLote === 'exclusao' && temPlano && diasPassados > 30) {
         obsAutomatica = `⛔ Passaram ${diasPassados} dias da rescisão (prazo 30 dias). Exclusão obrigatória (perda do direito).`;
       }
 
       const novoItem = {
-        id: Date.now() + index, // ID único
+        id: Date.now() + index, 
         dataGeracao: new Date().toLocaleString('pt-BR'),
+        tipoMovimento: tipoLote, 
         nome: nome,
         cpf: cpfDigitado,
-        dataRescisao: dataApresentacao,
-        admissao: admissao,
-        motivo: 'sem_justa_causa', // Motivo padrão para agilizar
+        dataRescisao: dataApresentacao, 
+        motivo: 'sem_justa_causa', 
         saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude), inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataRaw) } : { ativo: false },
         dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental), inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataRaw) } : { ativo: false },
+        custoTotal: custoSaude + custoDental,
         status: temPlano ? 'Pendente de Exclusão' : 'Sem plano ativo (Baixa automática)',
         dataEntrega: '',
         emailHp: '',
         observacao: obsAutomatica,
-        pdfUrl: null
+        pdfUrl: null,
+        operadorResponsavel: operador 
       };
       
-      salvarNoFirestore(novoItem); // Salva na nuvem
-      return novoItem;
+      salvarNoFirestore(novoItem); 
+      novosRegistros.push(novoItem);
     });
 
-    // A atualização local visual imediata:
+    if (novosRegistros.length === 0 && duplicadosCount > 0) {
+      setAlertaGlobal(`Nenhum registro novo. Todos os ${duplicadosCount} colaboradores do lote já constam no Controle de Movimentações.`);
+      setLoteDesligamentos([]);
+      return;
+    }
+
     setHistorico(prev => [...novosRegistros, ...prev].sort((a, b) => b.id - a.id));
-    setSucessoMsg(`Lote processado e salvo na nuvem com sucesso! ${novosRegistros.length} colaboradores verificados.`);
-    setLoteDesligamentos([]); // Limpa o lote para evitar duplo clique
+    setSucessoMsg(`Lote processado! ${novosRegistros.length} novos adicionados (${duplicadosCount} duplicados ignorados).`);
+    setLoteDesligamentos([]);
   };
 
-  // Preenche a busca individual via botão do Histórico
   const preencherEBuscar = (cpf, dataResc) => {
     setCpfBusca(cpf);
     if (dataResc && dataResc.includes('/')) {
@@ -453,7 +535,7 @@ export default function App() {
   // 4. MOTOR DE GERAÇÃO DO PDF (ESPELHO)
   // ==========================================
   const construtorDePdf = async (dadosPdf) => {
-    const { nome, cpf, admissao, dataRescisao, motivo, saude, dental } = dadosPdf;
+    const { nome, cpf, admissao, dataRescisao, motivo, saude, dental, tipo } = dadosPdf;
     
     if (!window.PDFLib) {
       await new Promise((resolve, reject) => {
@@ -467,7 +549,7 @@ export default function App() {
 
     const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
     const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595.28, 841.89]); // A4
+    const page = pdfDoc.addPage([595.28, 841.89]); 
     
     const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -486,30 +568,36 @@ export default function App() {
       yOffset -= 22;
     };
 
-    // Título
-    escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0, 0.2, 0.6));
+    let tituloPrincipal = 'ESPELHO DE DADOS - EXCLUSÃO AMIL (RN 488/22)';
+    if (tipo === 'adesao') tituloPrincipal = 'ESPELHO DE DADOS - ADESÃO DE TITULAR';
+    if (tipo === 'inclusao_dep') tituloPrincipal = 'ESPELHO DE DADOS - INCLUSÃO DE DEPENDENTE';
+    if (tipo === 'mudanca_plano') tituloPrincipal = 'ESPELHO DE DADOS - MUDANÇA DE PLANO';
+
+    escrever(tituloPrincipal, 16, true, rgb(0, 0.2, 0.6));
     escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5, 0.5, 0.5));
     yOffset -= 20;
 
-    // Dados do Colaborador
     escrever('DADOS DO COLABORADOR', 14, true, rgb(0, 0, 0));
     yOffset -= 5;
     escreverLinha('Nome Completo:', nome);
     escreverLinha('CPF:', cpf);
     escreverLinha('Data de Admissão:', admissao);
-    escreverLinha('Data de Rescisão:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
+    escreverLinha('Data do Evento/Solicitação:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
     
-    const motivosFormatados = {
-      'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
-      'sem_justa_causa': 'Demissão/exoneração sem justa causa',
-      'com_justa_causa': 'Demissão por justa causa',
-      'aposentadoria': 'Aposentadoria'
-    };
-    escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo] || motivosFormatados['sem_justa_causa']);
+    if (tipo === 'exclusao') {
+      const motivosFormatados = {
+        'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
+        'sem_justa_causa': 'Demissão/exoneração sem justa causa',
+        'com_justa_causa': 'Demissão por justa causa',
+        'aposentadoria': 'Aposentadoria'
+      };
+      escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo] || motivosFormatados['sem_justa_causa']);
+    } else {
+      escreverLinha('Tipo de Solicitação:', tituloPrincipal.split('- ')[1]);
+    }
     
     yOffset -= 20;
 
-    // Saúde
     escrever('PLANO AMIL SAÚDE', 14, true, rgb(0, 0, 0));
     yOffset -= 5;
     if (saude && saude.ativo) {
@@ -523,7 +611,6 @@ export default function App() {
 
     yOffset -= 20;
 
-    // Dental
     escrever('PLANO AMIL DENTAL', 14, true, rgb(0, 0, 0));
     yOffset -= 5;
     if (dental && dental.ativo) {
@@ -535,17 +622,15 @@ export default function App() {
       escrever('Não possui plano dental ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
     }
 
-    // Rodapé
     yOffset = 50;
     escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-BR'), 9, false, rgb(0.6, 0.6, 0.6));
 
-    // Transforma em Base64 para garantir a permanência no banco de dados após fechar o navegador
     const dataUri = await pdfDoc.saveAsBase64({ dataUri: true });
     return dataUri; 
   };
 
   const handleGerarPDF = async () => {
-    if (!motivo) { 
+    if (resultado.tipo === 'exclusao' && !motivo) { 
       setAlertaGlobal("⚠️ Regra da ANS não selecionada! Por favor, escolha o motivo da rescisão."); 
       return; 
     }
@@ -558,6 +643,7 @@ export default function App() {
         admissao: resultado.admissao,
         dataRescisao: dataDesligamento,
         motivo: motivo,
+        tipo: resultado.tipo,
         saude: manterSaude ? resultado.saude : { ativo: false },
         dental: manterDental ? resultado.dental : { ativo: false }
       });
@@ -571,16 +657,18 @@ export default function App() {
 
       setSucessoMsg(`Espelho de dados de ${resultado.nome} gerado com sucesso!`);
       
-      const indexPendente = historico.findIndex(h => h.cpf === cpfBusca && h.status === 'Pendente de Exclusão');
+      const indexExistente = historico.findIndex(h => limparDocumento(h.cpf) === limparDocumento(cpfBusca));
       
-      if (indexPendente !== -1) {
-        const itemExistente = historico[indexPendente];
+      if (indexExistente !== -1) {
+        const itemExistente = historico[indexExistente];
         const novoRegistro = {
             ...itemExistente,
-            status: 'Gerado (Aguardando ação)',
+            status: itemExistente.status === 'Pendente de Exclusão' ? 'Gerado (Aguardando ação)' : itemExistente.status,
+            custoTotal: resultado.custoTotal, 
             dataGeracao: new Date().toLocaleString('pt-BR'),
             pdfUrl: dataUri,
-            observacao: 'Espelho de exclusão gerado.'
+            operadorResponsavel: operador, 
+            observacao: itemExistente.observacao ? (itemExistente.observacao.includes('Espelho') ? itemExistente.observacao : `${itemExistente.observacao} | Novo espelho gerado.`) : 'Espelho de exclusão gerado.'
         };
         setHistorico(prev => prev.map(h => h.id === itemExistente.id ? novoRegistro : h));
         salvarNoFirestore(novoRegistro);
@@ -588,14 +676,17 @@ export default function App() {
         const novoRegistro = {
           id: Date.now(),
           dataGeracao: new Date().toLocaleString('pt-BR'),
+          tipoMovimento: resultado.tipo, 
           nome: resultado.nome,
           cpf: cpfBusca,
           dataRescisao: dataDesligamento.split('-').reverse().join('/'),
+          custoTotal: resultado.custoTotal || 0,
           status: 'Gerado (Aguardando ação)',
           dataEntrega: '',
           emailHp: '',
           observacao: '',
-          pdfUrl: dataUri 
+          pdfUrl: dataUri,
+          operadorResponsavel: operador 
         };
         setHistorico(prev => [novoRegistro, ...prev]);
         salvarNoFirestore(novoRegistro);
@@ -618,6 +709,7 @@ export default function App() {
         admissao: item.admissao,
         dataRescisao: item.dataRescisao,
         motivo: item.motivo || 'sem_justa_causa',
+        tipo: item.tipoMovimento || 'exclusao', 
         saude: item.saude,
         dental: item.dental
       });
@@ -634,6 +726,7 @@ export default function App() {
       atualizarHistorico(item.id, 'pdfUrl', dataUri);
       atualizarHistorico(item.id, 'status', 'Gerado (Aguardando ação)');
       atualizarHistorico(item.id, 'observacao', 'Espelho gerado em lote.');
+      atualizarHistorico(item.id, 'operadorResponsavel', operador);
 
     } catch (error) {
       console.error("Erro ao gerar PDF da linha:", error);
@@ -649,7 +742,11 @@ export default function App() {
   const atualizarHistorico = (id, campo, valor) => {
     const itemAtualizado = historico.find(item => item.id === id);
     if (itemAtualizado) {
-      const novoItem = { ...itemAtualizado, [campo]: valor };
+      const novoItem = { 
+        ...itemAtualizado, 
+        [campo]: valor,
+        operadorResponsavel: campo !== 'dataEntrega' ? operador : itemAtualizado.operadorResponsavel 
+      };
       setHistorico(prev => prev.map(item => item.id === id ? novoItem : item));
       salvarNoFirestore(novoItem);
     }
@@ -659,11 +756,169 @@ export default function App() {
     setSucessoMsg('Alterações e regras de SLA salvas com sucesso!');
   };
 
+  const historicoPendentes = historico.filter(h => h.status !== 'Exclusão processada' && h.status !== 'Sem plano ativo (Baixa automática)');
+  const historicoConcluidos = historico.filter(h => h.status === 'Exclusão processada' || h.status === 'Sem plano ativo (Baixa automática)');
+  const itensExibidos = abaAtiva === 'pendentes' ? historicoPendentes : historicoConcluidos;
+
+  const pendentesAtrasados = historicoPendentes.filter(h => verificarAtraso(h.dataRescisao, h.dataEntrega));
+  const custoEmAtraso = pendentesAtrasados.reduce((acc, curr) => acc + (curr.custoTotal || 0), 0);
+  const custoTotalPendentes = historicoPendentes.reduce((acc, curr) => acc + (curr.custoTotal || 0), 0);
+
+  // ==========================================
+  // 6. EXPORTAÇÃO E COMUNICAÇÃO EM LOTE
+  // ==========================================
+  const handleExportarCSV = () => {
+    if (itensExibidos.length === 0) {
+      setAlertaGlobal("Não há dados para exportar nesta aba.");
+      return;
+    }
+    
+    const cabecalho = ["Data Geracao", "Tipo de Movimentacao", "Nome", "CPF", "Data Evento", "Status", "Motivo (Se Exclusao)", "Custo Total (R$)", "Saude Ativo", "Dental Ativo", "Observacoes"];
+    
+    const linhas = itensExibidos.map(item => [
+      item.dataGeracao,
+      item.tipoMovimento || 'exclusao',
+      item.nome,
+      item.cpf,
+      item.dataRescisao,
+      item.status,
+      item.motivo || 'Nao informado',
+      (item.custoTotal || 0).toString().replace('.', ','), 
+      item.saude?.ativo ? 'Sim' : 'Nao',
+      item.dental?.ativo ? 'Sim' : 'Nao',
+      (item.observacao || '').replace(/;/g, ',').replace(/\n/g, ' ')
+    ]);
+    
+    const csvContent = [cabecalho.join(";"), ...linhas.map(l => l.join(";"))].join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); 
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Relatorio_Amil_${abaAtiva}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setSucessoMsg(`Relatório da aba "${abaAtiva === 'pendentes' ? 'Em Andamento' : 'Concluídos'}" exportado com sucesso!`);
+  };
+
+  const handleExportarSLA = () => {
+    if (historico.length === 0) {
+      setAlertaGlobal("Não há dados no histórico para gerar o relatório de SLA.");
+      return;
+    }
+    
+    const cabecalho = ["Tipo Movimentacao", "Nome", "CPF", "Data Evento", "Status Atual", "Data Entrega", "Dias Decorridos", "Status SLA", "Custo Mensal (R$)"];
+    
+    const linhas = historico.map(item => {
+      let dias = 0;
+      let statusSLA = "N/A";
+      let dataEntregaFormatada = "Não informada";
+
+      if (item.dataRescisao) {
+        const [d, m, y] = item.dataRescisao.split('/');
+        const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
+        const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : new Date();
+        
+        const diferencaTempo = dataComparacao.getTime() - rescisaoDate.getTime();
+        dias = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
+        
+        if (item.dataEntrega) {
+            dataEntregaFormatada = item.dataEntrega.split('-').reverse().join('/');
+            statusSLA = dias > 10 ? "Fora do Prazo (> 10 dias)" : "No Prazo (<= 10 dias)";
+        } else {
+            if (['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status)) {
+                statusSLA = "Baixa s/ Entrega (Finalizado)";
+            } else {
+                statusSLA = dias > 10 ? "Pendente ATRASADO" : "Pendente NO PRAZO";
+            }
+        }
+      }
+
+      return [
+        item.tipoMovimento || 'exclusao', 
+        item.nome,
+        item.cpf,
+        item.dataRescisao,
+        item.status,
+        dataEntregaFormatada,
+        dias,
+        statusSLA,
+        (item.custoTotal || 0).toString().replace('.', ',') 
+      ];
+    });
+    
+    const csvContent = [cabecalho.join(";"), ...linhas.map(l => l.join(";"))].join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); 
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Relatorio_SLA_Amil_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    setSucessoMsg(`Relatório de SLA (Prazos) exportado com sucesso!`);
+  };
+
+  const handleEnviarEmailPendentes = () => {
+    const pendentes = historico.filter(h => h.status === 'Pendente de Exclusão' || h.status === 'Gerado (Aguardando ação)');
+    
+    if (pendentes.length === 0) {
+      setAlertaGlobal("Excelente! Não há nenhum desligamento pendente de processamento no momento.");
+      return;
+    }
+    
+    let corpoEmail = "Olá,%0D%0A%0D%0ASegue abaixo a lista de colaboradores com desligamento pendente para exclusão/processamento na Amil:%0D%0A%0D%0A";
+    
+    pendentes.forEach((p, index) => {
+       corpoEmail += `${index + 1}. Nome: ${p.nome} | CPF: ${p.cpf} | Rescisão: ${p.dataRescisao}%0D%0A`;
+    });
+    
+    corpoEmail += "%0D%0A%0D%0AFicamos no aguardo das tratativas.%0D%0A%0D%0AAtenciosamente,";
+    
+    const mailtoUrl = `mailto:?subject=Lista de Desligamentos Pendentes - Exclusão Amil&body=${corpoEmail}`;
+    window.location.href = mailtoUrl;
+  };
+
+  if (showLogin) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100">
+          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-center text-blue-900 mb-2">Identificação da Equipe</h2>
+          <p className="text-gray-500 text-center mb-8 text-sm">Para operarem juntos em tempo real, informe seu nome. Ele ficará registrado nas tratativas.</p>
+          
+          <label className="block text-sm font-bold text-gray-700 mb-2">Seu Nome ou Credencial:</label>
+          <input 
+            type="text" 
+            value={inputNome} 
+            onChange={(e) => setInputNome(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAcessarPainel()}
+            placeholder="Ex: Carlos RH" 
+            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none mb-6" 
+          />
+          <button 
+            onClick={handleAcessarPainel} 
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center gap-2"
+          >
+            Acessar Painel <ChevronDown className="-rotate-90" size={20}/>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* ALERTAS GLOBAIS FLUTUANTES */}
         {alertaGlobal && (
           <div className="fixed top-4 right-4 z-50 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5 max-w-md">
             <p className="font-medium flex items-start gap-2"><AlertCircle size={20} className="shrink-0 mt-0.5"/> {alertaGlobal}</p>
@@ -675,24 +930,30 @@ export default function App() {
           </div>
         )}
 
-        {/* CABEÇALHO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
-              <FileText className="text-blue-600" /> Exclusões AMIL
+              <FileText className="text-blue-600" /> Central de Movimentações AMIL
             </h1>
             <p className="text-gray-500 text-sm mt-1 flex items-center gap-2">
-              Geração de relatórios com cálculos exatos de permanência
+              Controle unificado de Exclusões, Adesões e Alterações de plano
               {salvando ? (
                 <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse"><Cloud size={12}/> Salvando...</span>
               ) : (
-                user && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Cloud size={12}/> Salvo na Nuvem</span>
+                user ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Cloud size={12}/> Salvo na Nuvem</span> : null
               )}
             </p>
           </div>
           
-          {/* BOTÕES DE AÇÃO GLOBAIS - DOWNLOAD DINÂMICO */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col md:flex-row flex-wrap gap-2 md:items-center">
+            <button 
+              onClick={handleTrocarOperador}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-200 mr-2"
+              title="Trocar usuário"
+            >
+              <User size={16}/> {operador}
+            </button>
+
             {pdfOficialUrl ? (
               <a 
                 href={pdfOficialUrl} 
@@ -719,7 +980,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* ÁREA DE ABASTECIMENTO */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <button 
             onClick={() => setMostrarAbastecimento(!mostrarAbastecimento)}
@@ -728,6 +988,11 @@ export default function App() {
             <div className="flex flex-col items-start">
               <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                 <UploadCloud className="text-gray-400" /> 1. Arquivos de Origem (.CSV)
+                {isDesatualizado && mesReferencia !== '' && (
+                  <span className="bg-yellow-100 text-yellow-800 text-[11px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 border border-yellow-200 animate-pulse">
+                    <Calendar size={12}/> Pendente: {nomeMesAtualFormatado}
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-orange-600 mt-1 font-medium bg-orange-50 px-2 py-0.5 rounded">
                 ⚠️ Por segurança, os arquivos de planilhas não são salvos na nuvem. Recarregue-os a cada nova sessão.
@@ -740,7 +1005,28 @@ export default function App() {
 
           {mostrarAbastecimento && (
             <div className="p-6 pt-0 border-t border-gray-100 animate-in slide-in-from-top-2 duration-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+              
+              {isDesatualizado && (
+                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <Calendar className="text-yellow-600 mt-1 shrink-0" size={24} />
+                    <div>
+                      <h3 className="font-bold text-yellow-800">Lembrete: Virada de Competência</h3>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        Estamos em <strong>{nomeMesAtualFormatado}</strong> e o sistema indica que as bases (faturas) ainda não foram validadas este mês. Para evitar falsos cálculos financeiros, baixe as faturas atualizadas no portal da operadora.
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleAtualizarMesReferencia}
+                    className="whitespace-nowrap px-4 py-2 bg-yellow-600 text-white font-bold rounded-lg hover:bg-yellow-700 transition-colors shadow-sm text-sm border border-yellow-700"
+                  >
+                    Confirmar Atualização
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
                 <div className={`p-4 rounded-lg border-2 border-dashed ${baseSistema.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Base RH (Opcional)</label>
                   <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setBaseSistema)} className="text-xs w-full" />
@@ -753,18 +1039,16 @@ export default function App() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Dental</label>
                   <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaDental)} className="text-xs w-full" />
                 </div>
-                {/* NOVO CAMPO DE LOTE */}
                 <div className={`p-4 rounded-lg border-2 border-dashed ${loteDesligamentos.length > 0 ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-50'}`}>
-                  <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><ListChecks size={16}/> Lote de Desligamentos</label>
+                  <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><ListChecks size={16}/> Lote de Movimentações</label>
                   <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setLoteDesligamentos)} className="text-xs w-full" />
-                  <p className="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática.</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Carregue a lista (exclusões ou adesões).</p>
                 </div>
               </div>
             </div>
           )}
         </div>
 
-        {/* ÁREA DE OPERAÇÃO E CÁLCULO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
             <Search className="text-gray-400" /> 2. Buscar e Calcular
@@ -772,11 +1056,20 @@ export default function App() {
           
           <div className="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
             <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo da Solicitação</label>
+              <select value={tipoMovimento} onChange={(e) => setTipoMovimento(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                <option value="exclusao">🛑 Exclusão (Desligamento)</option>
+                <option value="adesao">✅ Adesão (Novo Titular)</option>
+                <option value="inclusao_dep">👨‍👩‍👧 Inclusão de Dependente</option>
+                <option value="mudanca_plano">🔄 Mudança de Plano</option>
+              </select>
+            </div>
+            <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
               <input type="text" placeholder="Ex: 55566677788" value={cpfBusca} onChange={(e) => setCpfBusca(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
             </div>
             <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data da Rescisão</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data do Evento</label>
               <input type="date" value={dataDesligamento} onChange={(e) => setDataDesligamento(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
             </div>
             <button onClick={handleBuscar} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm">
@@ -785,62 +1078,78 @@ export default function App() {
           </div>
           {erroPesquisa && <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200"><AlertCircle size={16} /> {erroPesquisa}</div>}
 
-          {/* ÁREA DE BOTÃO PARA O LOTE QUANDO CARREGADO */}
           {loteDesligamentos.length > 0 && (
             <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-50 p-4 rounded-lg border border-purple-100 gap-4 animate-in fade-in">
               <div>
                 <h3 className="font-semibold text-purple-800 flex items-center gap-2"><ListChecks size={18}/> Processamento Automático (Triagem)</h3>
-                <p className="text-sm text-purple-600 mt-1">Encontrados <strong>{loteDesligamentos.length} colaboradores</strong> na planilha de desligamentos.</p>
+                <p className="text-sm text-purple-600 mt-1">Encontrados <strong>{loteDesligamentos.length} colaboradores</strong> na planilha.</p>
+                
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-sm font-medium text-purple-800">Processar este lote como:</span>
+                  <select value={tipoLote} onChange={(e) => setTipoLote(e.target.value)} className="p-1.5 border border-purple-300 rounded-md text-sm outline-none bg-white text-purple-900 font-medium">
+                    <option value="exclusao">Exclusão (Desligamentos)</option>
+                    <option value="adesao">Adesão (Novos Titulares)</option>
+                    <option value="mudanca_plano">Mudança de Plano</option>
+                  </select>
+                </div>
               </div>
-              <button onClick={handleProcessarLote} className="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto">
+              <button onClick={handleProcessarLote} className="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto h-fit mt-auto">
                 Realizar Triagem em Lote
               </button>
             </div>
           )}
         </div>
 
-        {/* ESPELHO DE RESULTADOS */}
         {resultado && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
             
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-4">
               <div>
-                <h3 className="text-xl font-bold text-gray-800">{resultado.nome}</h3>
-                <p className="text-sm text-gray-500">CPF: {cpfBusca} • Demissão: {dataDesligamento.split('-').reverse().join('/')}</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-gray-800">{resultado.nome}</h3>
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded uppercase tracking-wider">{resultado.tipo.replace('_', ' ')}</span>
+                </div>
+                <p className="text-sm text-gray-500 mt-1">CPF: {cpfBusca} • Evento: {dataDesligamento.split('-').reverse().join('/')}</p>
+                {resultado.custoTotal > 0 && (
+                  <p className="text-sm text-orange-600 font-bold mt-1 flex items-center gap-1"><DollarSign size={16}/> Custo Estimado na Fatura: {formatarMoeda(resultado.custoTotal)} / mês</p>
+                )}
               </div>
-              <div className="mt-4 md:mt-0 w-full md:w-auto">
-                <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={`w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium ${motivo ? 'bg-green-50 border-green-300 text-green-800' : 'border-orange-300 bg-orange-50 text-orange-800'}`}>
-                  <option value="">⚠️ Obrigatório: Regra ANS...</option>
-                  <option value="pedido_demissao">Pedido de demissão</option>
-                  <option value="sem_justa_causa">Sem justa causa</option>
-                  <option value="com_justa_causa">Com justa causa</option>
-                  <option value="aposentadoria">Aposentadoria</option>
-                </select>
-              </div>
+              
+              {resultado.tipo === 'exclusao' && (
+                <div className="mt-4 md:mt-0 w-full md:w-auto">
+                  <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={`w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium ${motivo ? 'bg-green-50 border-green-300 text-green-800' : 'border-orange-300 bg-orange-50 text-orange-800'}`}>
+                    <option value="">⚠️ Obrigatório: Regra ANS...</option>
+                    <option value="pedido_demissao">Pedido de demissão</option>
+                    <option value="sem_justa_causa">Sem justa causa</option>
+                    <option value="com_justa_causa">Com justa causa</option>
+                    <option value="aposentadoria">Aposentadoria</option>
+                  </select>
+                </div>
+              )}
             </div>
 
-            {/* AVALIAÇÃO DE REGRAS DE NEGÓCIO DA ANS */}
-            <div className="mb-6 space-y-2">
-              {calcularDiasDesdeRescisao(dataDesligamento) > 30 && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
-                  <AlertTriangle size={18} className="shrink-0" />
-                  <div>
-                    <strong>Atenção:</strong> Já se passaram <strong>{calcularDiasDesdeRescisao(dataDesligamento)} dias</strong> da rescisão. O prazo máximo legal de 30 dias expirou. <u>Proceda com a exclusão obrigatória</u>.
+            {resultado.tipo === 'exclusao' && (
+              <div className="mb-6 space-y-2">
+                {calcularDiasDesdeRescisao(dataDesligamento) > 30 && (
+                  <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <div>
+                      <strong>Atenção:</strong> Já se passaram <strong>{calcularDiasDesdeRescisao(dataDesligamento)} dias</strong> do evento. O prazo máximo legal de 30 dias expirou. <u>Proceda com a exclusão obrigatória</u>.
+                    </div>
                   </div>
-                </div>
-              )}
-              {motivo && motivo !== 'sem_justa_causa' && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
-                  <AlertTriangle size={18} className="shrink-0" />
-                  <div>
-                    <strong>Atenção:</strong> O direito de manutenção aplica-se apenas a demissões "Sem Justa Causa". <u>Proceda com a exclusão obrigatória</u>.
+                )}
+                {motivo && motivo !== 'sem_justa_causa' && (
+                  <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
+                    <AlertTriangle size={18} className="shrink-0" />
+                    <div>
+                      <strong>Atenção:</strong> O direito de manutenção aplica-se apenas a demissões "Sem Justa Causa". <u>Proceda com a exclusão obrigatória</u>.
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* CARD SAÚDE */}
               <div className={`p-4 rounded-xl border-2 ${resultado.saude.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className={`font-bold ${resultado.saude.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Saúde</h4>
@@ -863,7 +1172,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* CARD DENTAL */}
               <div className={`p-4 rounded-xl border-2 ${resultado.dental.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className={`font-bold ${resultado.dental.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Dental</h4>
@@ -901,21 +1209,87 @@ export default function App() {
           </div>
         )}
 
-        {/* ÁREA DE HISTÓRICO - CONTROLE DE MOVIMENTAÇÕES AMIL */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
               <Clock className="text-blue-600" /> 3. Controle de Movimentações Amil
             </h2>
-            {historico.length > 0 && (
-              <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
-                <AlertCircle size={18} /> Pendências a tratar: {historico.filter(h => h.status === 'Pendente de Exclusão').length}
-              </div>
-            )}
           </div>
+
+          {historico.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                <div>
+                  <p className="text-sm text-blue-600 font-bold uppercase tracking-wider">Total Pendente</p>
+                  <p className="text-3xl font-black text-blue-900 mt-1">{historicoPendentes.length}</p>
+                  <p className="text-xs text-blue-600 mt-1">Colaboradores aguardando ação</p>
+                </div>
+                <div className="bg-blue-200 text-blue-700 p-4 rounded-full shadow-inner"><Clock size={28}/></div>
+              </div>
+
+              <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-center justify-between shadow-sm">
+                <div>
+                  <p className="text-sm text-orange-600 font-bold uppercase tracking-wider">Mensalidade em Risco</p>
+                  <p className="text-3xl font-black text-orange-900 mt-1">{formatarMoeda(custoTotalPendentes)}</p>
+                  <p className="text-xs text-orange-600 mt-1">Soma de todos os pendentes</p>
+                </div>
+                <div className="bg-orange-200 text-orange-700 p-4 rounded-full shadow-inner"><DollarSign size={28}/></div>
+              </div>
+
+              <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-center justify-between shadow-sm animate-in fade-in zoom-in duration-500">
+                <div>
+                  <p className="text-sm text-red-600 font-bold uppercase tracking-wider flex items-center gap-1"><AlertTriangle size={14}/> Custo Indevido Estimado</p>
+                  <p className="text-3xl font-black text-red-900 mt-1">{formatarMoeda(custoEmAtraso)}</p>
+                  <p className="text-xs text-red-600 mt-1">Ref. aos {pendentesAtrasados.length} colaboradores com SLA vencido</p>
+                </div>
+                <div className="bg-red-200 text-red-700 p-4 rounded-full shadow-inner"><TrendingDown size={28}/></div>
+              </div>
+            </div>
+          )}
           
-          {historico.length === 0 ? (
-            <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controle gerado nesta sessão.</p>
+          <div className="flex flex-col sm:flex-row justify-between border-b border-gray-200 mb-4 gap-4 pb-2">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setAbaAtiva('pendentes')}
+                className={`py-2 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${abaAtiva === 'pendentes' ? 'border-blue-600 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                <Inbox size={18}/> Em Andamento <span className={`${abaAtiva === 'pendentes' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs`}>{historicoPendentes.length}</span>
+              </button>
+              <button
+                onClick={() => setAbaAtiva('concluidos')}
+                className={`py-2 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${abaAtiva === 'concluidos' ? 'border-green-600 text-green-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                <Archive size={18}/> Processados / Concluídos <span className={`${abaAtiva === 'concluidos' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs`}>{historicoConcluidos.length}</span>
+              </button>
+            </div>
+            
+            <div className="flex gap-2 items-center flex-wrap sm:justify-end">
+              <button 
+                onClick={handleEnviarEmailPendentes}
+                className="text-xs flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-100 font-bold transition-colors border border-blue-200 shadow-sm whitespace-nowrap"
+                title="Abre seu e-mail com a lista de pendentes formatada"
+              >
+                <Mail size={16} /> E-mail (Lista)
+              </button>
+              <button 
+                onClick={handleExportarSLA}
+                className="text-xs flex items-center gap-1.5 bg-orange-50 text-orange-700 px-3 py-2 rounded-lg hover:bg-orange-100 font-bold transition-colors border border-orange-200 shadow-sm whitespace-nowrap"
+                title="Relatório focado nos prazos de SLA (10 dias)"
+              >
+                <Clock size={16} /> Relatório de SLA
+              </button>
+              <button 
+                onClick={handleExportarCSV}
+                className="text-xs flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-100 font-bold transition-colors border border-emerald-200 shadow-sm whitespace-nowrap"
+                title="Baixa a tabela atual em formato Excel"
+              >
+                <FileSpreadsheet size={16} /> Exportar Excel
+              </button>
+            </div>
+          </div>
+
+          {itensExibidos.length === 0 ? (
+            <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum registro nesta aba.</p>
           ) : (
             <div className="overflow-x-auto pb-4">
               <table className="w-full text-sm text-left text-gray-600">
@@ -923,19 +1297,18 @@ export default function App() {
                   <tr>
                     <th className="px-4 py-3">Data</th>
                     <th className="px-4 py-3">Colaborador</th>
-                    <th className="px-4 py-3">Rescisão</th>
+                    <th className="px-4 py-3">Evento</th>
                     <th className="px-4 py-3" style={{ minWidth: '400px' }}>Status, Ações e Observações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {[...historico].sort((a, b) => {
+                  {[...itensExibidos].sort((a, b) => {
                     const aSem = a.status === 'Sem plano ativo (Baixa automática)';
                     const bSem = b.status === 'Sem plano ativo (Baixa automática)';
                     if (aSem && !bSem) return 1;
                     if (!aSem && bSem) return -1;
                     return 0;
                   }).map((item) => {
-                    // Ignora o atraso se a ação já estiver concluída ou for baixa automática
                     const temAtraso = !['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && verificarAtraso(item.dataRescisao, item.dataEntrega);
                     const planoAtivo = item.status !== 'Sem plano ativo (Baixa automática)';
                     const diasPassadosRescisao = calcularDiasDesdeRescisao(item.dataRescisao);
@@ -948,45 +1321,71 @@ export default function App() {
                         <td className="px-4 py-4 align-top pt-5 font-medium text-gray-800">
                           {item.nome}
                           <br/><span className="text-xs text-gray-400 font-normal">CPF: {item.cpf}</span>
+                          
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                              item.tipoMovimento === 'adesao' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              item.tipoMovimento === 'inclusao_dep' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                              item.tipoMovimento === 'mudanca_plano' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                              'bg-red-50 text-red-700 border-red-200'
+                            }`}>
+                              {item.tipoMovimento === 'adesao' ? 'ADESÃO' : 
+                               item.tipoMovimento === 'inclusao_dep' ? 'INC. DEPENDENTE' : 
+                               item.tipoMovimento === 'mudanca_plano' ? 'MUDANÇA PLANO' : 'EXCLUSÃO'}
+                            </span>
+                            
+                            {item.custoTotal > 0 && (
+                              <div className="text-[10px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 flex items-center gap-1 w-max">
+                                <DollarSign size={10}/> {formatarMoeda(item.custoTotal)} / mês
+                              </div>
+                            )}
+                          </div>
                         </td>
-                        <td className="px-4 py-4 align-top pt-5">{item.dataRescisao}</td>
+                        <td className="px-4 py-4 align-top pt-5">
+                          <span className="block">{item.dataRescisao}</span>
+                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Data Ref.</span>
+                        </td>
                         <td className="px-4 py-4 align-top">
                           
                           <div className="flex gap-2 mb-3">
-                            {/* SELECT DE STATUS */}
                             <select 
                               value={item.status}
                               onChange={(e) => atualizarHistorico(item.id, 'status', e.target.value)}
                               className={`flex-1 p-2 border rounded text-sm outline-none font-medium ${
-                                item.status === 'Exclusão processada' || item.status === 'Sem plano ativo (Baixa automática)' ? 'bg-green-100 text-green-800 border-green-300' :
-                                item.status === 'Gerado (Aguardando ação)' || item.status === 'Pendente de Exclusão' ? 'bg-gray-100 text-gray-600 border-gray-300' :
+                                item.status === 'Exclusão processada' || item.status.includes('concluída') || item.status === 'Sem plano ativo (Baixa automática)' ? 'bg-green-100 text-green-800 border-green-300' :
+                                item.status === 'Gerado (Aguardando ação)' || item.status.includes('Pendente') ? 'bg-gray-100 text-gray-600 border-gray-300' :
                                 'bg-blue-50 text-blue-800 border-blue-300'
                               }`}
                             >
-                              <option value="Pendente de Exclusão">Pendente de Exclusão</option>
+                              <option value={item.tipoMovimento === 'exclusao' ? 'Pendente de Exclusão' : 'Pendente de Lançamento'}>
+                                {item.tipoMovimento === 'exclusao' ? 'Pendente de Exclusão' : 'Pendente de Lançamento'}
+                              </option>
                               <option value="Gerado (Aguardando ação)">Gerado (Aguardando ação)</option>
                               <option value="Preenchido e assinado">Preenchido e assinado</option>
                               <option value="Enviado para o colaborador">Enviado para o colaborador</option>
                               <option value="Encaminhado para hphealth">Encaminhado para hphealth</option>
-                              <option value="Exclusão processada">Exclusão processada</option>
+                              <option value={item.tipoMovimento === 'exclusao' ? 'Exclusão processada' : 'Movimentação concluída'}>
+                                {item.tipoMovimento === 'exclusao' ? 'Exclusão processada' : 'Movimentação concluída'}
+                              </option>
                               <option value="Sem plano ativo (Baixa automática)">Sem plano ativo (Baixa automática)</option>
                             </select>
 
-                            {/* BOTÃO AVALIAR / GERAR DIRETO (Para Lotes Pendentes) */}
-                            {item.status === 'Pendente de Exclusão' && !item.pdfUrl && (
+                            {(item.status.includes('Pendente')) && !item.pdfUrl && (
                               <div className="flex flex-col gap-1">
                                 <div className="flex gap-1">
-                                  <select 
-                                    value={item.motivo || 'sem_justa_causa'}
-                                    onChange={(e) => atualizarHistorico(item.id, 'motivo', e.target.value)}
-                                    className="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28"
-                                    title="Motivo da Rescisão"
-                                  >
-                                    <option value="pedido_demissao">Pedido Dem.</option>
-                                    <option value="sem_justa_causa">Sem Justa</option>
-                                    <option value="com_justa_causa">Com Justa</option>
-                                    <option value="aposentadoria">Aposent.</option>
-                                  </select>
+                                  {item.tipoMovimento === 'exclusao' && (
+                                    <select 
+                                      value={item.motivo || 'sem_justa_causa'}
+                                      onChange={(e) => atualizarHistorico(item.id, 'motivo', e.target.value)}
+                                      className="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28"
+                                      title="Motivo da Rescisão"
+                                    >
+                                      <option value="pedido_demissao">Pedido Dem.</option>
+                                      <option value="sem_justa_causa">Sem Justa</option>
+                                      <option value="com_justa_causa">Com Justa</option>
+                                      <option value="aposentadoria">Aposent.</option>
+                                    </select>
+                                  )}
                                   <button 
                                     onClick={() => handleGerarPdfDaLinha(item)}
                                     disabled={gerandoPdf}
@@ -1004,8 +1403,7 @@ export default function App() {
                                   </button>
                                 </div>
                                 
-                                {/* AVISOS VISUAIS DE REGRA DE NEGÓCIO NA TABELA */}
-                                {(perdeuPrazo30Dias || semDireitoMotivo) && (
+                                {(perdeuPrazo30Dias || semDireitoMotivo) && item.tipoMovimento === 'exclusao' && (
                                   <div className="mt-1 space-y-0.5">
                                     {perdeuPrazo30Dias && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Passou de 30 dias. Exclusão.</div>}
                                     {semDireitoMotivo && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Motivo sem direito à manutenção.</div>}
@@ -1014,7 +1412,6 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* BOTÃO DOWNLOAD PDF DIRETO */}
                             {item.pdfUrl && (
                               <a 
                                 href={item.pdfUrl}
@@ -1027,7 +1424,6 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* ALERTA DE ATRASO (> 10 DIAS DA RESCISÃO) */}
                           {temAtraso && (
                             <div className="mb-3 px-2 py-1.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-semibold flex items-center gap-1.5">
                               <AlertTriangle size={14} /> Atenção: Prazo de entrega (SLA 10 dias) expirado!
@@ -1035,7 +1431,6 @@ export default function App() {
                           )}
 
                           <div className="grid grid-cols-1 gap-3">
-                            {/* INPUT CONDICIONAL: ENVIADO PARA O COLABORADOR */}
                             {item.status === 'Enviado para o colaborador' && (
                               <div className="animate-in fade-in slide-in-from-top-1">
                                 <label className="text-xs text-gray-500 mb-1 block">Data da Entrega:</label>
@@ -1048,7 +1443,6 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* INPUT CONDICIONAL: ENCAMINHADO PARA HPHEALTH */}
                             {item.status === 'Encaminhado para hphealth' && (
                               <div className="animate-in fade-in slide-in-from-top-1">
                                 <label className="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
@@ -1071,7 +1465,6 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* CAMPO DE OBSERVAÇÕES */}
                             <div>
                               <textarea
                                 placeholder="Adicionar observações..."
@@ -1082,13 +1475,19 @@ export default function App() {
                               />
                             </div>
                             
-                            {/* BOTÃO SALVAR PARA CONFORTO DO USUÁRIO */}
                             <button 
                               onClick={salvarAlteracoes}
                               className="w-full mt-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-xs font-bold transition-colors border border-gray-300 flex items-center justify-center gap-1.5"
                             >
                               <Save size={14}/> Salvar Registro
                             </button>
+
+                            {item.operadorResponsavel && (
+                              <div className="flex items-center justify-end text-[10px] text-gray-400 mt-1 mr-1 gap-1 font-medium" title="Último usuário a modificar ou gerar este registro">
+                                <User size={10} /> Tratado por: {item.operadorResponsavel}
+                              </div>
+                            )}
+
                           </div>
 
                         </td>

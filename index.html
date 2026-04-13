@@ -89,6 +89,25 @@
             </button>
 
             <div id="areaAbastecimento" class="hidden p-6 pt-0 border-t border-gray-100 fade-in">
+                
+                <!-- LEMBRETE MENSAL INTELIGENTE -->
+                <div id="lembreteMensal" class="hidden mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg shadow-sm fade-in">
+                    <div class="flex flex-col sm:flex-row items-start justify-between gap-4">
+                        <div class="flex gap-3">
+                            <i data-lucide="bell" class="w-6 h-6 text-yellow-600 shrink-0 mt-0.5"></i>
+                            <div>
+                                <h3 class="font-bold text-yellow-800">Lembrete de Atualização: <span id="mesAtualLembrete"></span></h3>
+                                <p class="text-sm text-yellow-700 mt-1">
+                                    Estamos num novo mês! Para garantir cálculos de SLA e permanência precisos, certifique-se de carregar as <strong>Faturas Amil atualizadas deste mês</strong> e a base do RH mais recente.
+                                </p>
+                            </div>
+                        </div>
+                        <button onclick="dispensarLembreteMensal()" class="px-4 py-2 bg-yellow-200 hover:bg-yellow-300 text-yellow-800 text-sm font-bold rounded-md transition-colors whitespace-nowrap shadow-sm border border-yellow-300">
+                            Ciente, Arquivos Atualizados
+                        </button>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
                     <div id="boxBase" class="p-4 rounded-lg border-2 border-dashed border-gray-300">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Base RH (Opcional)</label>
@@ -106,6 +125,14 @@
                         <label class="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><i data-lucide="list-checks" class="w-4 h-4"></i> Lote de Desligamentos</label>
                         <input type="file" id="fileLote" accept=".csv" class="text-xs w-full" />
                         <p class="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática.</p>
+                    </div>
+                </div>
+
+                <!-- NOVO: HISTÓRICO DE BASES INSERIDAS -->
+                <div class="mt-6 border-t border-gray-100 pt-4 fade-in">
+                    <h3 class="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1"><i data-lucide="history" class="w-4 h-4"></i> Histórico de Ficheiros Carregados (Últimos 30)</h3>
+                    <div id="listaHistoricoBases" class="bg-gray-50 border border-gray-200 rounded-lg max-h-40 overflow-y-auto p-1 text-xs text-gray-600 shadow-inner">
+                        <p class="text-gray-400 italic p-2 text-center">Nenhum ficheiro registado recentemente.</p>
                     </div>
                 </div>
             </div>
@@ -206,8 +233,13 @@
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                     <i data-lucide="clock" class="text-blue-600 w-5 h-5"></i> 3. Controlo de Movimentações Amil
                 </h2>
-                <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
-                    <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
+                    </div>
+                    <button onclick="gerarRelatorioCSV()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap" title="Exportar para Excel">
+                        <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Relatório Excel
+                    </button>
                 </div>
             </div>
 
@@ -274,7 +306,8 @@
             pdfOficialUrl: null, pdfOficialNome: '',
             appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
             abaAtiva: 'pendentes',
-            termoBusca: '' // NOVO: Controle da pesquisa rápida
+            termoBusca: '', // NOVO: Controle da pesquisa rápida
+            historicoBases: [] // NOVO: Histórico de ficheiros carregados
         };
 
         // Inicializar ícones
@@ -363,6 +396,15 @@
                         }
                     } catch (e) { console.error(e); }
 
+                    // Ouvir Histórico de Bases (Uploads)
+                    const basesRef = doc(db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'historicoBases');
+                    onSnapshot(basesRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            state.historicoBases = docSnap.data().logs || [];
+                            renderHistoricoBases();
+                        }
+                    }, (error) => console.error("Erro ao ouvir historicoBases:", error));
+
                     // Ouvir Histórico
                     const colRef = collection(db, 'artifacts', state.appId, 'public', 'data', 'historicoAmil');
                     onSnapshot(colRef, (snapshot) => {
@@ -388,6 +430,42 @@
                 setTimeout(() => updateStatusNuvem(false), 800);
             }
         };
+
+        // ==========================================
+        // LEMBRETE DE ATUALIZAÇÃO MENSAL
+        // ==========================================
+        const verificarLembreteMensal = () => {
+            const data = new Date();
+            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            const mesAno = `${meses[data.getMonth()]} de ${data.getFullYear()}`;
+            
+            // Verifica no armazenamento do navegador se a pessoa já deu "Ciente" neste mês
+            const lembreteSalvo = localStorage.getItem('amil_arquivos_atualizados_mes');
+            
+            if (lembreteSalvo !== mesAno) {
+                document.getElementById('mesAtualLembrete').textContent = mesAno;
+                document.getElementById('lembreteMensal').classList.remove('hidden');
+                
+                // Abre a aba de arquivos automaticamente para a pessoa ver o lembrete
+                const area = document.getElementById('areaAbastecimento');
+                const icone = document.getElementById('iconeAbastecimentoToggle');
+                area.classList.remove('hidden');
+                icone.innerHTML = `<i data-lucide="chevron-up" class="w-5 h-5"></i>`;
+            }
+        };
+
+        window.dispensarLembreteMensal = () => {
+            const data = new Date();
+            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            const mesAno = `${meses[data.getMonth()]} de ${data.getFullYear()}`;
+            
+            localStorage.setItem('amil_arquivos_atualizados_mes', mesAno);
+            document.getElementById('lembreteMensal').classList.add('hidden');
+            mostrarAlerta("Ótimo! Pode processar as suas exclusões.");
+        };
+
+        // Chama a verificação assim que a página carrega
+        setTimeout(verificarLembreteMensal, 500);
 
         // ==========================================
         // LÓGICA DE FICHEIROS E CSV
@@ -421,6 +499,7 @@
                     state.pdfOficialNome = file.name;
                     atualizarBotoesPdfOficial();
                     mostrarAlerta('Formulário anexado e guardado na nuvem!');
+                    registrarUploadBase('formularioPdf', file.name); // Regista o upload do formulário
                     if (state.user && state.db) {
                         try {
                             const ref = doc(state.db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'geral');
@@ -433,6 +512,59 @@
                 mostrarAlerta("Por favor, envie apenas ficheiros PDF.", "erro");
             }
         });
+
+        // NOVO: Registar histórico de ficheiros carregados
+        window.registrarUploadBase = async (tipo, nomeArquivo) => {
+            if (!state.user || !state.db) return;
+            const tiposMap = {
+                'baseSistema': 'Base RH',
+                'faturaSaude': 'Fatura Saúde',
+                'faturaDental': 'Fatura Dental',
+                'loteDesligamentos': 'Lote de Desligamentos',
+                'formularioPdf': 'Formulário Oficial (PDF)'
+            };
+            const novoLog = {
+                id: Date.now(),
+                tipo: tiposMap[tipo] || tipo,
+                nomeArquivo: nomeArquivo,
+                dataUpload: new Date().toLocaleString('pt-PT')
+            };
+            
+            // Mantém apenas os últimos 30 registos para não pesar
+            const novosLogs = [novoLog, ...state.historicoBases].slice(0, 30);
+            state.historicoBases = novosLogs;
+            renderHistoricoBases();
+
+            try {
+                const refBases = doc(state.db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'historicoBases');
+                await setDoc(refBases, { logs: novosLogs }, { merge: true });
+            } catch (error) { console.error("Erro ao guardar histórico de bases:", error); }
+        };
+
+        window.renderHistoricoBases = () => {
+            const container = document.getElementById('listaHistoricoBases');
+            if (!container) return;
+            
+            if (state.historicoBases.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 italic p-2 text-center">Nenhum ficheiro registado recentemente.</p>';
+                return;
+            }
+            
+            let html = '<ul class="divide-y divide-gray-100">';
+            state.historicoBases.forEach(log => {
+                html += `
+                    <li class="py-2 px-3 flex justify-between items-center hover:bg-white transition-colors rounded">
+                        <div class="flex items-center gap-2 overflow-hidden pr-2">
+                            <span class="font-bold text-gray-700 w-44 shrink-0">${log.tipo}</span>
+                            <span class="text-gray-500 truncate" title="${log.nomeArquivo}">${log.nomeArquivo}</span>
+                        </div>
+                        <span class="text-gray-400 shrink-0 ml-2">${log.dataUpload}</span>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            container.innerHTML = html;
+        };
 
         const processarCSV = (arquivo, tipo) => {
             if (!arquivo) return;
@@ -454,6 +586,7 @@
                 });
 
                 state[tipo] = dados;
+                registrarUploadBase(tipo, arquivo.name); // Regista no histórico
                 
                 // Estilo visual de ficheiro carregado
                 let boxId = tipo === 'baseSistema' ? 'boxBase' : tipo === 'faturaSaude' ? 'boxSaude' : tipo === 'faturaDental' ? 'boxDental' : 'boxLote';
@@ -951,6 +1084,72 @@
                     mostrarAlerta("Erro ao excluir da nuvem.", "erro");
                 }
             }
+        };
+
+        // ==========================================
+        // GERAÇÃO DE RELATÓRIO EXCEL (CSV)
+        // ==========================================
+        window.gerarRelatorioCSV = () => {
+            if (state.historico.length === 0) {
+                mostrarAlerta("Não há dados para exportar.", "erro");
+                return;
+            }
+
+            // Cabeçalhos (BOM adicionado para Excel ler UTF-8 corretamente)
+            let csvContent = "\uFEFFNome;CPF;Data de Rescisão;Motivo;Status Atual;Data Entrega;Dias Decorridos;SLA (Prazo 10 dias);Observações\n";
+            const dataAtual = new Date();
+
+            state.historico.forEach(item => {
+                let dias = 0;
+                let slaStatus = "N/A";
+                
+                if (item.status === 'Sem plano ativo (Baixa automática)') {
+                    slaStatus = "Baixa Automática";
+                } else if (item.dataRescisao) {
+                    const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : dataAtual;
+                    const [d, m, y] = item.dataRescisao.split('/');
+                    if (d && m && y) {
+                        const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
+                        dias = Math.ceil((dataComparacao.getTime() - rDate.getTime()) / (1000 * 60 * 60 * 24));
+                        slaStatus = dias > 10 ? "FORA DO PRAZO" : "Dentro do Prazo";
+                        
+                        // Se já foi processada sem atraso na data de entrega, congela o status
+                        if (['Exclusão processada', 'Concluído'].includes(item.status) && dias <= 10) {
+                            slaStatus = "Concluído no Prazo";
+                        }
+                    }
+                }
+
+                // Limpar campos para evitar quebra do CSV (remover ; e \n)
+                const limpa = str => str ? String(str).replace(/;/g, ',').replace(/\n/g, ' ').trim() : '';
+
+                const row = [
+                    limpa(item.nome),
+                    limpa(item.cpf),
+                    limpa(item.dataRescisao),
+                    limpa(item.motivo || 'N/A'),
+                    limpa(item.status),
+                    limpa(item.dataEntrega || 'Pendente'),
+                    dias,
+                    slaStatus,
+                    limpa(item.observacao)
+                ];
+
+                csvContent += row.join(";") + "\n";
+            });
+
+            // Criar e baixar o ficheiro
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `Relatorio_Exclusoes_Amil_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            mostrarAlerta("Relatório Excel gerado com sucesso!");
         };
 
         // Função para alternar entre as abas

@@ -190,13 +190,19 @@
 
         <!-- ÁREA DE HISTÓRICO -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                     <i data-lucide="clock" class="text-blue-600 w-5 h-5"></i> 3. Controlo de Movimentações Amil
                 </h2>
                 <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
                     <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
                 </div>
+            </div>
+
+            <!-- ABAS DE NAVEGAÇÃO -->
+            <div class="flex border-b border-gray-200 mb-4 gap-2 overflow-x-auto">
+                <button onclick="mudarAbaHistorico('pendentes')" id="tabPendentes" class="px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors">Em Tratativa</button>
+                <button onclick="mudarAbaHistorico('concluidos')" id="tabConcluidos" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Concluídos / Excluídos</button>
             </div>
             
             <div id="tabelaHistoricoContainer" class="overflow-x-auto pb-4">
@@ -219,7 +225,8 @@
             baseSistema: [], faturaSaude: [], faturaDental: [], loteDesligamentos: [],
             resultado: null, historico: [], user: null, db: null,
             pdfOficialUrl: null, pdfOficialNome: '',
-            appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'
+            appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
+            abaAtiva: 'pendentes' // NOVO: Controle da aba visível
         };
 
         // Inicializar ícones
@@ -720,12 +727,12 @@
 
                 mostrarAlerta(`Espelho gerado com sucesso!`);
                 
-                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.status === 'Pendente de Exclusão');
+                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf);
                 const dtFmt = state.resultado.dtDesligamento.includes('-') ? state.resultado.dtDesligamento.split('-').reverse().join('/') : state.resultado.dtDesligamento;
                 
                 let novoReg;
                 if (idx !== -1) {
-                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', dataGeracao: new Date().toLocaleString('pt-PT'), pdfUrl: dataUri, observacao: 'Espelho de exclusão gerado.' };
+                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', pdfUrl: dataUri, observacao: state.historico[idx].observacao || 'Espelho de exclusão gerado.' };
                 } else {
                     novoReg = { id: Date.now(), dataGeracao: new Date().toLocaleString('pt-PT'), nome: state.resultado.nome, cpf: state.resultado.cpf, dataRescisao: dtFmt, status: 'Gerado (Aguardando ação)', dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri };
                 }
@@ -769,9 +776,20 @@
                 return;
             }
 
+            let adicionados = 0;
+            let ignorados = 0;
+
             state.loteDesligamentos.forEach((registro, index) => {
                 const chaves = Object.keys(registro);
                 const cpfDigitado = limparDoc(extrairCpf(registro));
+
+                // Verifica se o CPF já existe no histórico atual
+                const jaExiste = state.historico.some(h => h.cpf === cpfDigitado);
+                if (jaExiste) {
+                    ignorados++;
+                    return; // Ignora e avança para o próximo colaborador
+                }
+
                 const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
                 let dataRaw = dataKey ? registro[dataKey] : '';
                 
@@ -807,10 +825,12 @@
                     dataEntrega: '', emailHp: '', observacao: obs, pdfUrl: null
                 };
                 
+                state.historico.push(novoItem); // Atualiza localmente para evitar duplicados no mesmo lote
                 salvarNoFirestore(novoItem);
+                adicionados++;
             });
 
-            mostrarAlerta(`Lote processado! ${state.loteDesligamentos.length} colaboradores verificados.`);
+            mostrarAlerta(`Lote processado! ${adicionados} adicionados, ${ignorados} ignorados (já existiam).`);
             state.loteDesligamentos = [];
             document.getElementById('areaLoteLoaded').classList.add('hidden');
             document.getElementById('boxLote').classList.remove('border-purple-400', 'bg-purple-50');
@@ -848,6 +868,12 @@
             }
         };
 
+        // NOVO: Função para alternar entre as abas
+        window.mudarAbaHistorico = (aba) => {
+            state.abaAtiva = aba;
+            renderHistorico();
+        };
+
         const renderHistorico = () => {
             const container = document.getElementById('tabelaHistoricoContainer');
             const pendencias = state.historico.filter(h => h.status === 'Pendente de Exclusão').length;
@@ -858,8 +884,35 @@
                 document.getElementById('qtdPendencias').textContent = pendencias;
             } else badge.classList.add('hidden');
 
-            if (state.historico.length === 0) {
-                container.innerHTML = `<p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controlo gerado nesta sessão.</p>`;
+            // --- LÓGICA DE FILTRAGEM POR ABA ---
+            const statusConcluidos = ['Exclusão processada', 'Sem plano ativo (Baixa automática)'];
+            
+            const tabPendentes = document.getElementById('tabPendentes');
+            const tabConcluidos = document.getElementById('tabConcluidos');
+            
+            const qtdPendentes = state.historico.filter(h => !statusConcluidos.includes(h.status)).length;
+            const qtdConcluidos = state.historico.filter(h => statusConcluidos.includes(h.status)).length;
+
+            if(state.abaAtiva === 'pendentes') {
+                tabPendentes.className = "px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors";
+                tabConcluidos.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
+            } else {
+                tabConcluidos.className = "px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors";
+                tabPendentes.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
+            }
+
+            // Atualiza o texto e a bolinha (badge) de contagem dentro da aba
+            tabPendentes.innerHTML = `Em Tratativa <span class="ml-1 ${state.abaAtiva === 'pendentes' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdPendentes}</span>`;
+            tabConcluidos.innerHTML = `Concluídos / Excluídos <span class="ml-1 ${state.abaAtiva === 'concluidos' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdConcluidos}</span>`;
+
+            let filtrados = state.historico.filter(h => {
+                if (state.abaAtiva === 'pendentes') return !statusConcluidos.includes(h.status);
+                return statusConcluidos.includes(h.status);
+            });
+
+            if (filtrados.length === 0) {
+                const msgVazio = state.abaAtiva === 'pendentes' ? 'Nenhuma tratativa pendente neste momento.' : 'Nenhuma exclusão processada ainda.';
+                container.innerHTML = `<p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">${msgVazio}</p>`;
                 return;
             }
 
@@ -876,7 +929,7 @@
                     <tbody>
             `;
 
-            const ordenados = [...state.historico].sort((a, b) => {
+            const ordenados = [...filtrados].sort((a, b) => {
                 const aSem = a.status === 'Sem plano ativo (Baixa automática)';
                 const bSem = b.status === 'Sem plano ativo (Baixa automática)';
                 if (aSem && !bSem) return 1;

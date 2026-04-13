@@ -1,1506 +1,1004 @@
-import React, { useState, useEffect } from 'react';
-import { UploadCloud, Search, FileText, CheckCircle, AlertCircle, Clock, Send, ChevronDown, ChevronUp, Download, AlertTriangle, Save, ListChecks, Cloud, Archive, Inbox, FileSpreadsheet, Mail, DollarSign, TrendingDown, Calendar, User } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc } from 'firebase/firestore';
-
-// ==========================================
-// INICIALIZAÇÃO DO FIREBASE (PERSISTÊNCIA)
-// ==========================================
-let app, auth, db, appId;
-try {
-  const firebaseConfig = {
-    apiKey: "AIzaSyCdzXVqIF7sGHCGSIvc8-r04wj9GHoEI0U",
-    authDomain: "painel-amil-rh.firebaseapp.com",
-    projectId: "painel-amil-rh",
-    storageBucket: "painel-amil-rh.firebasestorage.app",
-    messagingSenderId: "263470309283",
-    appId: "1:263470309283:web:b548152f6d1ad842914416",
-    measurementId: "G-4JC8LLFTQC"
-  };
-
-export default function App() {
-  // ==========================================
-  // 1. ESTADOS DA APLICAÇÃO
-  // ==========================================
-  const [baseSistema, setBaseSistema] = useState([]);
-  const [faturaSaude, setFaturaSaude] = useState([]);
-  const [faturaDental, setFaturaDental] = useState([]);
-  const [loteDesligamentos, setLoteDesligamentos] = useState([]); 
-  
-  // Controle de Interface
-  const [mostrarAbastecimento, setMostrarAbastecimento] = useState(false);
-
-  // Tipos de Movimentação
-  const [tipoMovimento, setTipoMovimento] = useState('exclusao');
-  const [tipoLote, setTipoLote] = useState('exclusao');
-
-  // Estados de Busca e Formulário
-  const [cpfBusca, setCpfBusca] = useState('');
-  const [dataDesligamento, setDataDesligamento] = useState(''); 
-  const [motivo, setMotivo] = useState('');
-
-  // Estados Corrigidos (Resultados e Mensagens)
-  const [resultado, setResultado] = useState(null);
-  const [erroPesquisa, setErroPesquisa] = useState('');
-  const [sucessoMsg, setSucessoMsg] = useState('');
-
-  const [manterSaude, setManterSaude] = useState(true);
-  const [manterDental, setManterDental] = useState(true);
-  const [gerandoPdf, setGerandoPdf] = useState(false);
-  
-  const [historico, setHistorico] = useState([]);
-  const [abaAtiva, setAbaAtiva] = useState('pendentes'); 
-  
-  // Autenticação e Alertas
-  const [user, setUser] = useState(null);
-  const [alertaGlobal, setAlertaGlobal] = useState('');
-  const [salvando, setSalvando] = useState(false);
-  
-  // Identificação do Operador
-  const [operador, setOperador] = useState('');
-  const [showLogin, setShowLogin] = useState(false);
-  const [inputNome, setInputNome] = useState('');
-
-  // Estado para o PDF Oficial anexado
-  const [pdfOficialUrl, setPdfOficialUrl] = useState(null);
-  const [pdfOficialNome, setPdfOficialNome] = useState('');
-
-  // Controle de Atualização Mensal
-  const [mesReferencia, setMesReferencia] = useState('');
-
-  useEffect(() => {
-    if (sucessoMsg) {
-      const timer = setTimeout(() => setSucessoMsg(''), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [sucessoMsg]);
-
-  useEffect(() => {
-    if (alertaGlobal) {
-      const timer = setTimeout(() => setAlertaGlobal(''), 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [alertaGlobal]);
-
-  // ==========================================
-  // AUTENTICAÇÃO E SINCRONIZAÇÃO (FIREBASE)
-  // ==========================================
-  
-  useEffect(() => {
-    const salvo = localStorage.getItem('amil_operador');
-    if (salvo) {
-      setOperador(salvo);
-    } else {
-      setShowLogin(true);
-    }
-  }, []);
-
-  const handleAcessarPainel = () => {
-    if (inputNome.trim().length < 2) {
-      setAlertaGlobal("Por favor, digite seu nome para continuar.");
-      return;
-    }
-    localStorage.setItem('amil_operador', inputNome.trim());
-    setOperador(inputNome.trim());
-    setShowLogin(false);
-  };
-
-  const handleTrocarOperador = () => {
-    localStorage.removeItem('amil_operador');
-    setInputNome(operador);
-    setShowLogin(true);
-  };
-
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (error) {
-        console.error("Erro na autenticação:", error);
-      }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!user || !db) return;
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exclusões AMIL</title>
     
-    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'historicoAmil');
-    const unsubscribe = onSnapshot(
-      colRef,
-      (snapshot) => {
-        const dados = [];
-        snapshot.forEach((doc) => dados.push({ ...doc.data(), id: Number(doc.id) }));
-        setHistorico(dados.sort((a, b) => b.id - a.id));
-      },
-      (error) => console.error("Erro no onSnapshot:", error)
-    );
-    return () => unsubscribe();
-  }, [user]);
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- PDF-Lib -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 
-  useEffect(() => {
-    if (!user || !db) return;
-    const loadConfig = async () => {
-      try {
-        const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
-        const docSnap = await getDoc(configRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.pdfOficialBase64) {
-            setPdfOficialUrl(data.pdfOficialBase64);
-            setPdfOficialNome(data.pdfOficialNome || 'FORMULARIO_AMIL_EXCLUSAO.pdf');
-          }
-          if (data.mesReferencia) {
-            setMesReferencia(data.mesReferencia); 
-          }
-        }
-      } catch (e) {
-        console.error("Erro ao carregar config:", e);
-      }
-    };
-    loadConfig();
-  }, [user]);
+    <style>
+        /* Animações e Utilitários */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 min-h-screen p-6">
 
-  const salvarNoFirestore = async (registro) => {
-    if (!user || !db) return;
-    setSalvando(true);
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'historicoAmil', registro.id.toString());
-      await setDoc(docRef, registro);
-    } catch (error) {
-      console.error("Erro ao salvar:", error);
-      setAlertaGlobal("Erro de conexão ao tentar salvar na nuvem.");
-    } finally {
-      setTimeout(() => setSalvando(false), 800);
-    }
-  };
-
-  // ==========================================
-  // 2. FUNÇÕES DE UPLOAD E UTILIDADES
-  // ==========================================
-  const processarCSV = (arquivo, setEstado) => {
-    if (!arquivo) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const texto = e.target.result;
-      const delimitador = texto.indexOf(';') > -1 ? ';' : ','; 
-      const linhas = texto.split('\n').filter(linha => linha.trim() !== '');
-      if (linhas.length < 2) return;
-      
-      let cabecalhos = linhas[0].split(delimitador).map(c => c.trim().toLowerCase());
-      if(cabecalhos.length > 0) cabecalhos[0] = cabecalhos[0].replace(/^\uFEFF/, '');
-
-      const dados = linhas.slice(1).map(linha => {
-        const valores = linha.split(delimitador).map(v => v.trim());
-        let obj = {};
-        cabecalhos.forEach((cabecalho, index) => {
-          obj[cabecalho] = valores[index];
-        });
-        return obj;
-      });
-      setEstado(dados);
-    };
-    reader.readAsText(arquivo, 'utf-8');
-  };
-
-  const handleUploadPdfOficial = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/pdf') {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64data = reader.result;
-        setPdfOficialUrl(base64data);
-        setPdfOficialNome(file.name);
-        setSucessoMsg('Formulário anexado e salvo na nuvem com sucesso!');
+    <div class="max-w-6xl mx-auto space-y-6">
         
-        if (user && db) {
-          try {
-            const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
-            await setDoc(configRef, { 
-              pdfOficialBase64: base64data, 
-              pdfOficialNome: file.name 
-            }, { merge: true });
-          } catch (err) {
-            console.error("Erro ao salvar PDF oficial na nuvem:", err);
-          }
-        }
-      };
-      reader.readAsDataURL(file);
-    } else if (file) {
-      setAlertaGlobal("Por favor, envie apenas arquivos no formato PDF.");
-    }
-  };
-
-  const hoje = new Date();
-  const mesAtualCode = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-  let nomeMesStr = hoje.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-  const nomeMesAtualFormatado = nomeMesStr.charAt(0).toUpperCase() + nomeMesStr.slice(1);
-  const isDesatualizado = mesReferencia !== mesAtualCode;
-
-  const handleAtualizarMesReferencia = async () => {
-    setMesReferencia(mesAtualCode);
-    setSucessoMsg(`Competência atualizada para ${nomeMesAtualFormatado}! O aviso retornará no próximo mês.`);
-    if (user && db) {
-      try {
-        const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'configAmil', 'geral');
-        await setDoc(configRef, { mesReferencia: mesAtualCode }, { merge: true });
-      } catch (err) {
-        console.error("Erro ao atualizar mês na nuvem:", err);
-      }
-    }
-  };
-
-  const verificarAtraso = (dataRescisao, dataEntrega) => {
-    if (!dataRescisao) return false;
-    const [d, m, y] = dataRescisao.split('/');
-    if (!d || !m || !y) return false;
-    
-    const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
-    const dataComparacao = dataEntrega ? new Date(`${dataEntrega}T00:00:00`) : new Date();
-    
-    const diferencaTempo = dataComparacao.getTime() - rescisaoDate.getTime();
-    const diferencaDias = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
-    
-    return diferencaDias > 10;
-  };
-
-  const calcularDiasDesdeRescisao = (dataStr) => {
-    if (!dataStr) return 0;
-    let d, m, y;
-    if (dataStr.includes('/')) {
-      [d, m, y] = dataStr.split('/');
-    } else if (dataStr.includes('-')) {
-      const parts = dataStr.split('-');
-      if (parts[0].length === 4) {
-        y = parts[0]; m = parts[1]; d = parts[2];
-      } else {
-        d = parts[0]; m = parts[1]; y = parts[2];
-      }
-    } else {
-      return 0;
-    }
-    const dataR = new Date(`${y}-${m}-${d}T00:00:00`);
-    const hoje = new Date();
-    return Math.floor((hoje.getTime() - dataR.getTime()) / (1000 * 60 * 60 * 24));
-  };
-
-  // ==========================================
-  // 3. MOTOR LÓGICO: BUSCA E LOTE
-  // ==========================================
-  const limparDocumento = (doc) => doc ? doc.toString().replace(/\D/g, '') : '';
-  
-  const encontrarValor = (obj, palavrasChave) => {
-    if (!obj) return null;
-    const chave = Object.keys(obj).find(k => palavrasChave.some(p => k.includes(p)));
-    return chave ? obj[chave] : null;
-  };
-
-  const extrairNome = (reg) => encontrarValor(reg, ['nome', 'titular', 'colaborador', 'beneficiario']);
-  const extrairCpf = (reg) => encontrarValor(reg, ['cpf']);
-  const extrairCarteirinha = (reg) => encontrarValor(reg, ['carteirinha', 'matricula', 'código', 'codigo']);
-  
-  const extrairAdmissao = (reg) => encontrarValor(reg, ['admiss', 'inicio', 'início', 'contrata', 'entrada']);
-  
-  const formatarDataApresentacao = (dataRaw) => {
-    if (!dataRaw) return null;
-    const str = String(dataRaw).trim().split(' ')[0];
-    if (str.includes('-')) {
-      const parts = str.split('-');
-      if (parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-    if (!isNaN(str) && Number(str) > 10000) {
-      const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
-      const d = new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
-      return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    }
-    return str;
-  };
-
-  const extrairDataInicio = (registro) => {
-    if (!registro) return null;
-    const palavrasChave = ['inclusão', 'inclusao', 'vigencia', 'vigência', 'inicio', 'início', 'admissao', 'admissão'];
-    const chaveEncontrada = Object.keys(registro).find(k => palavrasChave.some(p => k.includes(p)));
-    return chaveEncontrada ? registro[chaveEncontrada] : null;
-  };
-
-  const extrairCusto = (reg) => {
-    if (!reg) return 0;
-    const chavesPossiveis = ['valor', 'custo', 'mensal', 'prêmio', 'premio', 'total'];
-    const chaveEncontrada = Object.keys(reg).find(k => chavesPossiveis.some(p => k.toLowerCase().includes(p)));
-    if (!chaveEncontrada || !reg[chaveEncontrada]) return 0;
-    
-    let strVal = String(reg[chaveEncontrada]).toUpperCase().replace('R$', '').trim();
-    
-    if (strVal.includes(',') && strVal.includes('.')) {
-      strVal = strVal.replace(/\./g, '').replace(',', '.');
-    } else if (strVal.includes(',')) {
-      strVal = strVal.replace(',', '.');
-    }
-    
-    const num = parseFloat(strVal);
-    return isNaN(num) ? 0 : num;
-  };
-
-  const formatarMoeda = (valor) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
-  };
-
-  const calcularTempo = (dataInicio, dataFim) => {
-    const converterData = (dataStr) => {
-      if (!dataStr) return new Date('Data Inválida');
-      const str = String(dataStr).trim().split(' ')[0]; 
-      
-      if (str.includes('/')) {
-        const parts = str.split('/');
-        if (parts[2] && parts[2].length === 4) return new Date(parts[2], parts[1] - 1, parts[0]);
-        if (parts[0] && parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
-      }
-      if (str.includes('-')) {
-        const parts = str.split('-');
-        if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
-        return new Date(parts[2], parts[1] - 1, parts[0]);
-      }
-      
-      if (!isNaN(str) && Number(str) > 10000) {
-        const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
-        return new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
-      }
-
-      return new Date(str);
-    };
-
-    const inicio = converterData(dataInicio);
-    const fim = converterData(dataFim);
-
-    if (isNaN(inicio) || isNaN(fim)) return { texto: "Data não identificada", anos: 0, meses: 0, dias: 0 };
-    if (fim < inicio) return { texto: "Desligamento anterior ao início", anos: 0, meses: 0, dias: 0 };
-
-    let anos = fim.getFullYear() - inicio.getFullYear();
-    let meses = fim.getMonth() - inicio.getMonth();
-    let dias = fim.getDate() - inicio.getDate();
-
-    if (dias < 0) {
-      meses--;
-      dias += new Date(fim.getFullYear(), fim.getMonth(), 0).getDate();
-    }
-    if (meses < 0) {
-      anos--;
-      meses += 12;
-    }
-    return { texto: `${anos} anos, ${meses} meses e ${dias} dias`, anos, meses, dias };
-  };
-
-  const handleBuscar = () => {
-    setErroPesquisa('');
-    setResultado(null);
-
-    const cpfDigitado = limparDocumento(cpfBusca);
-
-    if (!cpfDigitado || !dataDesligamento) { setErroPesquisa('Preencha o CPF e a Data de Rescisão.'); return; }
-    if (faturaSaude.length === 0 && faturaDental.length === 0) { setErroPesquisa('As faturas de Saúde e/ou Dental precisam estar carregadas.'); return; }
-
-    const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-    const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-    const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-
-    if (!cadastro && !saude && !dental) { setErroPesquisa('Colaborador não encontrado em nenhuma das bases carregadas.'); return; }
-
-    const nomeEncontrado = extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
-    const inicioSaude = extrairDataInicio(saude);
-    const inicioDental = extrairDataInicio(dental);
-    const admissaoEncontrada = extrairAdmissao(cadastro);
-    const custoSaude = extrairCusto(saude);
-    const custoDental = extrairCusto(dental);
-
-    setResultado({
-      nome: nomeEncontrado,
-      tipo: tipoMovimento, 
-      admissao: formatarDataApresentacao(admissaoEncontrada) || 'Não informado na Base',
-      saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude) || saude.carteirinha, inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataDesligamento) } : { ativo: false },
-      dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental) || dental.carteirinha, inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataDesligamento) } : { ativo: false },
-      custoTotal: custoSaude + custoDental
-    });
-    
-    setManterSaude(!!saude);
-    setManterDental(!!dental);
-  };
-
-  const handleProcessarLote = () => {
-    if (loteDesligamentos.length === 0) return;
-    if (faturaSaude.length === 0 && faturaDental.length === 0) {
-      setAlertaGlobal("⚠️ Carregue as faturas de Saúde e/ou Dental antes de processar o lote.");
-      return;
-    }
-
-    let duplicadosCount = 0;
-    const novosRegistros = [];
-
-    loteDesligamentos.forEach((registro, index) => {
-      const chaves = Object.keys(registro);
-      const cpfDigitado = limparDocumento(extrairCpf(registro));
-
-      const jaExiste = historico.some(h => limparDocumento(h.cpf) === cpfDigitado);
-      if (jaExiste) {
-        duplicadosCount++;
-        return; 
-      }
-
-      const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
-      let dataRaw = dataKey ? registro[dataKey] : '';
-      
-      let dataApresentacao = dataRaw;
-      if (dataRaw.includes('-')) {
-        const parts = dataRaw.split('-');
-        if (parts[0].length === 4) dataApresentacao = `${parts[2]}/${parts[1]}/${parts[0]}`; 
-      }
-
-      const cadastro = baseSistema.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-      const saude = faturaSaude.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-      const dental = faturaDental.find(f => limparDocumento(extrairCpf(f)) === cpfDigitado);
-
-      let nome = extrairNome(registro) || extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
-      const temPlano = !!saude || !!dental;
-
-      const inicioSaude = extrairDataInicio(saude);
-      const inicioDental = extrairDataInicio(dental);
-      const custoSaude = extrairCusto(saude);
-      const custoDental = extrairCusto(dental);
-      const admissaoRaw = extrairAdmissao(cadastro) || extrairAdmissao(registro);
-      const admissao = formatarDataApresentacao(admissaoRaw) || 'Não informado na Base';
-      const diasPassados = calcularDiasDesdeRescisao(dataApresentacao);
-      
-      let obsAutomatica = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Validado na fatura.';
-      
-      if (tipoLote === 'exclusao' && temPlano && diasPassados > 30) {
-        obsAutomatica = `⛔ Passaram ${diasPassados} dias da rescisão (prazo 30 dias). Exclusão obrigatória (perda do direito).`;
-      }
-
-      const novoItem = {
-        id: Date.now() + index, 
-        dataGeracao: new Date().toLocaleString('pt-BR'),
-        tipoMovimento: tipoLote, 
-        nome: nome,
-        cpf: cpfDigitado,
-        dataRescisao: dataApresentacao, 
-        motivo: 'sem_justa_causa', 
-        saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude), inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataRaw) } : { ativo: false },
-        dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental), inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataRaw) } : { ativo: false },
-        custoTotal: custoSaude + custoDental,
-        status: temPlano ? 'Pendente de Exclusão' : 'Sem plano ativo (Baixa automática)',
-        dataEntrega: '',
-        emailHp: '',
-        observacao: obsAutomatica,
-        pdfUrl: null,
-        operadorResponsavel: operador 
-      };
-      
-      salvarNoFirestore(novoItem); 
-      novosRegistros.push(novoItem);
-    });
-
-    if (novosRegistros.length === 0 && duplicadosCount > 0) {
-      setAlertaGlobal(`Nenhum registro novo. Todos os ${duplicadosCount} colaboradores do lote já constam no Controle de Movimentações.`);
-      setLoteDesligamentos([]);
-      return;
-    }
-
-    setHistorico(prev => [...novosRegistros, ...prev].sort((a, b) => b.id - a.id));
-    setSucessoMsg(`Lote processado! ${novosRegistros.length} novos adicionados (${duplicadosCount} duplicados ignorados).`);
-    setLoteDesligamentos([]);
-  };
-
-  const preencherEBuscar = (cpf, dataResc) => {
-    setCpfBusca(cpf);
-    if (dataResc && dataResc.includes('/')) {
-      const [d, m, y] = dataResc.split('/');
-      if (y && m && d) setDataDesligamento(`${y}-${m}-${d}`);
-    } else if (dataResc && dataResc.includes('-')) {
-      setDataDesligamento(dataResc);
-    }
-    
-    setSucessoMsg("Dados preenchidos na busca! Selecione a Regra ANS e gere o espelho.");
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-
-  // ==========================================
-  // 4. MOTOR DE GERAÇÃO DO PDF (ESPELHO)
-  // ==========================================
-  const construtorDePdf = async (dadosPdf) => {
-    const { nome, cpf, admissao, dataRescisao, motivo, saude, dental, tipo } = dadosPdf;
-    
-    if (!window.PDFLib) {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
-        script.onload = resolve;
-        script.onerror = () => reject(new Error("Falha ao carregar a biblioteca de PDF."));
-        document.head.appendChild(script);
-      });
-    }
-
-    const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595.28, 841.89]); 
-    
-    const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
-    let yOffset = 800;
-    const margemEsq = 50;
-
-    const escrever = (texto, size = 12, isBold = false, cor = rgb(0.2, 0.2, 0.2)) => {
-      page.drawText(texto || '', { x: margemEsq, y: yOffset, size, font: isBold ? fontBold : fontNormal, color: cor });
-      yOffset -= (size + 10);
-    };
-
-    const escreverLinha = (label, valor) => {
-      page.drawText(label, { x: margemEsq, y: yOffset, size: 12, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
-      page.drawText(valor || 'Não informado', { x: margemEsq + 180, y: yOffset, size: 12, font: fontNormal, color: rgb(0, 0, 0) });
-      yOffset -= 22;
-    };
-
-    let tituloPrincipal = 'ESPELHO DE DADOS - EXCLUSÃO AMIL (RN 488/22)';
-    if (tipo === 'adesao') tituloPrincipal = 'ESPELHO DE DADOS - ADESÃO DE TITULAR';
-    if (tipo === 'inclusao_dep') tituloPrincipal = 'ESPELHO DE DADOS - INCLUSÃO DE DEPENDENTE';
-    if (tipo === 'mudanca_plano') tituloPrincipal = 'ESPELHO DE DADOS - MUDANÇA DE PLANO';
-
-    escrever(tituloPrincipal, 16, true, rgb(0, 0.2, 0.6));
-    escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5, 0.5, 0.5));
-    yOffset -= 20;
-
-    escrever('DADOS DO COLABORADOR', 14, true, rgb(0, 0, 0));
-    yOffset -= 5;
-    escreverLinha('Nome Completo:', nome);
-    escreverLinha('CPF:', cpf);
-    escreverLinha('Data de Admissão:', admissao);
-    escreverLinha('Data do Evento/Solicitação:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
-    
-    if (tipo === 'exclusao') {
-      const motivosFormatados = {
-        'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
-        'sem_justa_causa': 'Demissão/exoneração sem justa causa',
-        'com_justa_causa': 'Demissão por justa causa',
-        'aposentadoria': 'Aposentadoria'
-      };
-      escreverLinha('Motivo da Rescisão:', motivosFormatados[motivo] || motivosFormatados['sem_justa_causa']);
-    } else {
-      escreverLinha('Tipo de Solicitação:', tituloPrincipal.split('- ')[1]);
-    }
-    
-    yOffset -= 20;
-
-    escrever('PLANO AMIL SAÚDE', 14, true, rgb(0, 0, 0));
-    yOffset -= 5;
-    if (saude && saude.ativo) {
-      escreverLinha('Carteirinha:', saude.carteirinha);
-      escreverLinha('Data de Início no Plano:', saude.inicioPlano);
-      escreverLinha('Tempo de Contribuição:', saude.tempo?.texto);
-      escreverLinha('Fracionado:', `${saude.tempo?.anos} Anos | ${saude.tempo?.meses} Meses | ${saude.tempo?.dias} Dias`);
-    } else {
-      escrever('Não possui plano de saúde ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
-    }
-
-    yOffset -= 20;
-
-    escrever('PLANO AMIL DENTAL', 14, true, rgb(0, 0, 0));
-    yOffset -= 5;
-    if (dental && dental.ativo) {
-      escreverLinha('Carteirinha:', dental.carteirinha);
-      escreverLinha('Data de Início no Plano:', dental.inicioPlano);
-      escreverLinha('Tempo de Contribuição:', dental.tempo?.texto);
-      escreverLinha('Fracionado:', `${dental.tempo?.anos} Anos | ${dental.tempo?.meses} Meses | ${dental.tempo?.dias} Dias`);
-    } else {
-      escrever('Não possui plano dental ativo ou não selecionado para o termo.', 11, false, rgb(0.5, 0.5, 0.5));
-    }
-
-    yOffset = 50;
-    escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-BR'), 9, false, rgb(0.6, 0.6, 0.6));
-
-    const dataUri = await pdfDoc.saveAsBase64({ dataUri: true });
-    return dataUri; 
-  };
-
-  const handleGerarPDF = async () => {
-    if (resultado.tipo === 'exclusao' && !motivo) { 
-      setAlertaGlobal("⚠️ Regra da ANS não selecionada! Por favor, escolha o motivo da rescisão."); 
-      return; 
-    }
-
-    setGerandoPdf(true);
-    try {
-      const dataUri = await construtorDePdf({
-        nome: resultado.nome,
-        cpf: cpfBusca,
-        admissao: resultado.admissao,
-        dataRescisao: dataDesligamento,
-        motivo: motivo,
-        tipo: resultado.tipo,
-        saude: manterSaude ? resultado.saude : { ativo: false },
-        dental: manterDental ? resultado.dental : { ativo: false }
-      });
-
-      const a = document.createElement('a');
-      a.href = dataUri;
-      a.download = `Espelho_Amil_${resultado.nome.replace(/\s+/g, '_')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      setSucessoMsg(`Espelho de dados de ${resultado.nome} gerado com sucesso!`);
-      
-      const indexExistente = historico.findIndex(h => limparDocumento(h.cpf) === limparDocumento(cpfBusca));
-      
-      if (indexExistente !== -1) {
-        const itemExistente = historico[indexExistente];
-        const novoRegistro = {
-            ...itemExistente,
-            status: itemExistente.status === 'Pendente de Exclusão' ? 'Gerado (Aguardando ação)' : itemExistente.status,
-            custoTotal: resultado.custoTotal, 
-            dataGeracao: new Date().toLocaleString('pt-BR'),
-            pdfUrl: dataUri,
-            operadorResponsavel: operador, 
-            observacao: itemExistente.observacao ? (itemExistente.observacao.includes('Espelho') ? itemExistente.observacao : `${itemExistente.observacao} | Novo espelho gerado.`) : 'Espelho de exclusão gerado.'
-        };
-        setHistorico(prev => prev.map(h => h.id === itemExistente.id ? novoRegistro : h));
-        salvarNoFirestore(novoRegistro);
-      } else {
-        const novoRegistro = {
-          id: Date.now(),
-          dataGeracao: new Date().toLocaleString('pt-BR'),
-          tipoMovimento: resultado.tipo, 
-          nome: resultado.nome,
-          cpf: cpfBusca,
-          dataRescisao: dataDesligamento.split('-').reverse().join('/'),
-          custoTotal: resultado.custoTotal || 0,
-          status: 'Gerado (Aguardando ação)',
-          dataEntrega: '',
-          emailHp: '',
-          observacao: '',
-          pdfUrl: dataUri,
-          operadorResponsavel: operador 
-        };
-        setHistorico(prev => [novoRegistro, ...prev]);
-        salvarNoFirestore(novoRegistro);
-      }
-
-    } catch (error) {
-      console.error("Erro interno do PDF:", error);
-      setAlertaGlobal("Ocorreu um erro ao gerar o relatório. Verifique os dados fornecidos.");
-    } finally {
-      setGerandoPdf(false);
-    }
-  };
-
-  const handleGerarPdfDaLinha = async (item) => {
-    setGerandoPdf(true);
-    try {
-      const dataUri = await construtorDePdf({
-        nome: item.nome,
-        cpf: item.cpf,
-        admissao: item.admissao,
-        dataRescisao: item.dataRescisao,
-        motivo: item.motivo || 'sem_justa_causa',
-        tipo: item.tipoMovimento || 'exclusao', 
-        saude: item.saude,
-        dental: item.dental
-      });
-
-      const a = document.createElement('a');
-      a.href = dataUri;
-      a.download = `Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      setSucessoMsg(`Espelho de ${item.nome} gerado com sucesso!`);
-      
-      atualizarHistorico(item.id, 'pdfUrl', dataUri);
-      atualizarHistorico(item.id, 'status', 'Gerado (Aguardando ação)');
-      atualizarHistorico(item.id, 'observacao', 'Espelho gerado em lote.');
-      atualizarHistorico(item.id, 'operadorResponsavel', operador);
-
-    } catch (error) {
-      console.error("Erro ao gerar PDF da linha:", error);
-      setAlertaGlobal("Erro ao gerar PDF. Verifique os dados.");
-    } finally {
-      setGerandoPdf(false);
-    }
-  };
-
-  // ==========================================
-  // 5. ATUALIZAÇÃO DO HISTÓRICO
-  // ==========================================
-  const atualizarHistorico = (id, campo, valor) => {
-    const itemAtualizado = historico.find(item => item.id === id);
-    if (itemAtualizado) {
-      const novoItem = { 
-        ...itemAtualizado, 
-        [campo]: valor,
-        operadorResponsavel: campo !== 'dataEntrega' ? operador : itemAtualizado.operadorResponsavel 
-      };
-      setHistorico(prev => prev.map(item => item.id === id ? novoItem : item));
-      salvarNoFirestore(novoItem);
-    }
-  };
-
-  const salvarAlteracoes = () => {
-    setSucessoMsg('Alterações e regras de SLA salvas com sucesso!');
-  };
-
-  const historicoPendentes = historico.filter(h => h.status !== 'Exclusão processada' && h.status !== 'Sem plano ativo (Baixa automática)');
-  const historicoConcluidos = historico.filter(h => h.status === 'Exclusão processada' || h.status === 'Sem plano ativo (Baixa automática)');
-  const itensExibidos = abaAtiva === 'pendentes' ? historicoPendentes : historicoConcluidos;
-
-  const pendentesAtrasados = historicoPendentes.filter(h => verificarAtraso(h.dataRescisao, h.dataEntrega));
-  const custoEmAtraso = pendentesAtrasados.reduce((acc, curr) => acc + (curr.custoTotal || 0), 0);
-  const custoTotalPendentes = historicoPendentes.reduce((acc, curr) => acc + (curr.custoTotal || 0), 0);
-
-  // ==========================================
-  // 6. EXPORTAÇÃO E COMUNICAÇÃO EM LOTE
-  // ==========================================
-  const handleExportarCSV = () => {
-    if (itensExibidos.length === 0) {
-      setAlertaGlobal("Não há dados para exportar nesta aba.");
-      return;
-    }
-    
-    const cabecalho = ["Data Geracao", "Tipo de Movimentacao", "Nome", "CPF", "Data Evento", "Status", "Motivo (Se Exclusao)", "Custo Total (R$)", "Saude Ativo", "Dental Ativo", "Observacoes"];
-    
-    const linhas = itensExibidos.map(item => [
-      item.dataGeracao,
-      item.tipoMovimento || 'exclusao',
-      item.nome,
-      item.cpf,
-      item.dataRescisao,
-      item.status,
-      item.motivo || 'Nao informado',
-      (item.custoTotal || 0).toString().replace('.', ','), 
-      item.saude?.ativo ? 'Sim' : 'Nao',
-      item.dental?.ativo ? 'Sim' : 'Nao',
-      (item.observacao || '').replace(/;/g, ',').replace(/\n/g, ' ')
-    ]);
-    
-    const csvContent = [cabecalho.join(";"), ...linhas.map(l => l.join(";"))].join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); 
-    
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Relatorio_Amil_${abaAtiva}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    setSucessoMsg(`Relatório da aba "${abaAtiva === 'pendentes' ? 'Em Andamento' : 'Concluídos'}" exportado com sucesso!`);
-  };
-
-  const handleExportarSLA = () => {
-    if (historico.length === 0) {
-      setAlertaGlobal("Não há dados no histórico para gerar o relatório de SLA.");
-      return;
-    }
-    
-    const cabecalho = ["Tipo Movimentacao", "Nome", "CPF", "Data Evento", "Status Atual", "Data Entrega", "Dias Decorridos", "Status SLA", "Custo Mensal (R$)"];
-    
-    const linhas = historico.map(item => {
-      let dias = 0;
-      let statusSLA = "N/A";
-      let dataEntregaFormatada = "Não informada";
-
-      if (item.dataRescisao) {
-        const [d, m, y] = item.dataRescisao.split('/');
-        const rescisaoDate = new Date(`${y}-${m}-${d}T00:00:00`);
-        const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : new Date();
-        
-        const diferencaTempo = dataComparacao.getTime() - rescisaoDate.getTime();
-        dias = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24));
-        
-        if (item.dataEntrega) {
-            dataEntregaFormatada = item.dataEntrega.split('-').reverse().join('/');
-            statusSLA = dias > 10 ? "Fora do Prazo (> 10 dias)" : "No Prazo (<= 10 dias)";
-        } else {
-            if (['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status)) {
-                statusSLA = "Baixa s/ Entrega (Finalizado)";
-            } else {
-                statusSLA = dias > 10 ? "Pendente ATRASADO" : "Pendente NO PRAZO";
-            }
-        }
-      }
-
-      return [
-        item.tipoMovimento || 'exclusao', 
-        item.nome,
-        item.cpf,
-        item.dataRescisao,
-        item.status,
-        dataEntregaFormatada,
-        dias,
-        statusSLA,
-        (item.custoTotal || 0).toString().replace('.', ',') 
-      ];
-    });
-    
-    const csvContent = [cabecalho.join(";"), ...linhas.map(l => l.join(";"))].join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); 
-    
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Relatorio_SLA_Amil_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    setSucessoMsg(`Relatório de SLA (Prazos) exportado com sucesso!`);
-  };
-
-  const handleEnviarEmailPendentes = () => {
-    const pendentes = historico.filter(h => h.status === 'Pendente de Exclusão' || h.status === 'Gerado (Aguardando ação)');
-    
-    if (pendentes.length === 0) {
-      setAlertaGlobal("Excelente! Não há nenhum desligamento pendente de processamento no momento.");
-      return;
-    }
-    
-    let corpoEmail = "Olá,%0D%0A%0D%0ASegue abaixo a lista de colaboradores com desligamento pendente para exclusão/processamento na Amil:%0D%0A%0D%0A";
-    
-    pendentes.forEach((p, index) => {
-       corpoEmail += `${index + 1}. Nome: ${p.nome} | CPF: ${p.cpf} | Rescisão: ${p.dataRescisao}%0D%0A`;
-    });
-    
-    corpoEmail += "%0D%0A%0D%0AFicamos no aguardo das tratativas.%0D%0A%0D%0AAtenciosamente,";
-    
-    const mailtoUrl = `mailto:?subject=Lista de Desligamentos Pendentes - Exclusão Amil&body=${corpoEmail}`;
-    window.location.href = mailtoUrl;
-  };
-
-  if (showLogin) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-100">
-          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <User size={32} />
-          </div>
-          <h2 className="text-2xl font-bold text-center text-blue-900 mb-2">Identificação da Equipe</h2>
-          <p className="text-gray-500 text-center mb-8 text-sm">Para operarem juntos em tempo real, informe seu nome. Ele ficará registrado nas tratativas.</p>
-          
-          <label className="block text-sm font-bold text-gray-700 mb-2">Seu Nome ou Credencial:</label>
-          <input 
-            type="text" 
-            value={inputNome} 
-            onChange={(e) => setInputNome(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAcessarPainel()}
-            placeholder="Ex: Carlos RH" 
-            className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none mb-6" 
-          />
-          <button 
-            onClick={handleAcessarPainel} 
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-colors shadow-md flex justify-center items-center gap-2"
-          >
-            Acessar Painel <ChevronDown className="-rotate-90" size={20}/>
-          </button>
+        <!-- ALERTAS GLOBAIS -->
+        <div id="alertaErro" class="hidden fixed top-4 right-4 z-50 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-lg fade-in max-w-md">
+            <p class="font-medium flex items-start gap-2"><i data-lucide="alert-circle" class="shrink-0 mt-0.5 w-5 h-5"></i> <span id="alertaErroMsg"></span></p>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-6 font-sans text-gray-800">
-      <div className="max-w-6xl mx-auto space-y-6">
-        
-        {alertaGlobal && (
-          <div className="fixed top-4 right-4 z-50 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5 max-w-md">
-            <p className="font-medium flex items-start gap-2"><AlertCircle size={20} className="shrink-0 mt-0.5"/> {alertaGlobal}</p>
-          </div>
-        )}
-        {sucessoMsg && (
-          <div className="fixed top-4 right-4 z-50 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-lg animate-in fade-in slide-in-from-top-5">
-            <p className="font-medium flex items-center gap-2"><CheckCircle size={18}/> {sucessoMsg}</p>
-          </div>
-        )}
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-blue-900 flex items-center gap-2">
-              <FileText className="text-blue-600" /> Central de Movimentações AMIL
-            </h1>
-            <p className="text-gray-500 text-sm mt-1 flex items-center gap-2">
-              Controle unificado de Exclusões, Adesões e Alterações de plano
-              {salvando ? (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse"><Cloud size={12}/> Salvando...</span>
-              ) : (
-                user ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1"><Cloud size={12}/> Salvo na Nuvem</span> : null
-              )}
-            </p>
-          </div>
-          
-          <div className="flex flex-col md:flex-row flex-wrap gap-2 md:items-center">
-            <button 
-              onClick={handleTrocarOperador}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium border border-gray-200 mr-2"
-              title="Trocar usuário"
-            >
-              <User size={16}/> {operador}
-            </button>
-
-            {pdfOficialUrl ? (
-              <a 
-                href={pdfOficialUrl} 
-                download={pdfOficialNome || "FORMULARIO_AMIL_EXCLUSAO.pdf"}
-                className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow text-sm font-bold whitespace-nowrap"
-                title="Baixar o arquivo em branco anexado"
-              >
-                <Download size={18} /> Baixar Formulário Oficial
-              </a>
-            ) : (
-              <button 
-                disabled
-                className="flex items-center gap-2 px-6 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-bold whitespace-nowrap"
-                title="Anexe o formulário primeiro para poder baixar"
-              >
-                <Download size={18} /> Baixar Formulário Oficial
-              </button>
-            )}
-
-            <label className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium whitespace-nowrap cursor-pointer shadow-sm">
-              <UploadCloud size={16} /> {pdfOficialUrl ? 'Substituir Formulário' : 'Anexar Formulário'}
-              <input type="file" accept="application/pdf" className="hidden" onChange={handleUploadPdfOficial} />
-            </label>
-          </div>
+        <div id="alertaSucesso" class="hidden fixed top-4 right-4 z-50 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded shadow-lg fade-in">
+            <p class="font-medium flex items-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i> <span id="alertaSucessoMsg"></span></p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <button 
-            onClick={() => setMostrarAbastecimento(!mostrarAbastecimento)}
-            className="w-full p-6 flex items-center justify-between hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex flex-col items-start">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <UploadCloud className="text-gray-400" /> 1. Arquivos de Origem (.CSV)
-                {isDesatualizado && mesReferencia !== '' && (
-                  <span className="bg-yellow-100 text-yellow-800 text-[11px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 border border-yellow-200 animate-pulse">
-                    <Calendar size={12}/> Pendente: {nomeMesAtualFormatado}
-                  </span>
-                )}
-              </h2>
-              <p className="text-xs text-orange-600 mt-1 font-medium bg-orange-50 px-2 py-0.5 rounded">
-                ⚠️ Por segurança, os arquivos de planilhas não são salvos na nuvem. Recarregue-os a cada nova sessão.
-              </p>
+        <!-- CABEÇALHO -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-blue-900 flex items-center gap-2">
+                    <i data-lucide="file-text" class="text-blue-600"></i> Exclusões AMIL
+                </h1>
+                <p class="text-gray-500 text-sm mt-1 flex items-center gap-2">
+                    Geração de relatórios com cálculos exatos de permanência
+                    <span id="statusNuvem" class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded flex items-center gap-1"><i data-lucide="cloud" class="w-3 h-3"></i> A Ligar...</span>
+                </p>
             </div>
-            <div className="text-gray-500 bg-gray-100 p-1.5 rounded-full">
-              {mostrarAbastecimento ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </div>
-          </button>
-
-          {mostrarAbastecimento && (
-            <div className="p-6 pt-0 border-t border-gray-100 animate-in slide-in-from-top-2 duration-200">
-              
-              {isDesatualizado && (
-                <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <Calendar className="text-yellow-600 mt-1 shrink-0" size={24} />
-                    <div>
-                      <h3 className="font-bold text-yellow-800">Lembrete: Virada de Competência</h3>
-                      <p className="text-sm text-yellow-700 mt-1">
-                        Estamos em <strong>{nomeMesAtualFormatado}</strong> e o sistema indica que as bases (faturas) ainda não foram validadas este mês. Para evitar falsos cálculos financeiros, baixe as faturas atualizadas no portal da operadora.
-                      </p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={handleAtualizarMesReferencia}
-                    className="whitespace-nowrap px-4 py-2 bg-yellow-600 text-white font-bold rounded-lg hover:bg-yellow-700 transition-colors shadow-sm text-sm border border-yellow-700"
-                  >
-                    Confirmar Atualização
-                  </button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-2">
-                <div className={`p-4 rounded-lg border-2 border-dashed ${baseSistema.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Base RH (Opcional)</label>
-                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setBaseSistema)} className="text-xs w-full" />
-                </div>
-                <div className={`p-4 rounded-lg border-2 border-dashed ${faturaSaude.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Saúde</label>
-                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaSaude)} className="text-xs w-full" />
-                </div>
-                <div className={`p-4 rounded-lg border-2 border-dashed ${faturaDental.length > 0 ? 'border-green-400 bg-green-50' : 'border-gray-300'}`}>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fatura Dental</label>
-                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setFaturaDental)} className="text-xs w-full" />
-                </div>
-                <div className={`p-4 rounded-lg border-2 border-dashed ${loteDesligamentos.length > 0 ? 'border-purple-400 bg-purple-50' : 'border-gray-300 bg-gray-50'}`}>
-                  <label className="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><ListChecks size={16}/> Lote de Movimentações</label>
-                  <input type="file" accept=".csv" onChange={(e) => processarCSV(e.target.files[0], setLoteDesligamentos)} className="text-xs w-full" />
-                  <p className="text-[10px] text-gray-500 mt-1">Carregue a lista (exclusões ou adesões).</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Search className="text-gray-400" /> 2. Buscar e Calcular
-          </h2>
-          
-          <div className="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo da Solicitação</label>
-              <select value={tipoMovimento} onChange={(e) => setTipoMovimento(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                <option value="exclusao">🛑 Exclusão (Desligamento)</option>
-                <option value="adesao">✅ Adesão (Novo Titular)</option>
-                <option value="inclusao_dep">👨‍👩‍👧 Inclusão de Dependente</option>
-                <option value="mudanca_plano">🔄 Mudança de Plano</option>
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
-              <input type="text" placeholder="Ex: 55566677788" value={cpfBusca} onChange={(e) => setCpfBusca(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data do Evento</label>
-              <input type="date" value={dataDesligamento} onChange={(e) => setDataDesligamento(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
-            </div>
-            <button onClick={handleBuscar} className="px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm">
-              Processar Dados
-            </button>
-          </div>
-          {erroPesquisa && <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200"><AlertCircle size={16} /> {erroPesquisa}</div>}
-
-          {loteDesligamentos.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-50 p-4 rounded-lg border border-purple-100 gap-4 animate-in fade-in">
-              <div>
-                <h3 className="font-semibold text-purple-800 flex items-center gap-2"><ListChecks size={18}/> Processamento Automático (Triagem)</h3>
-                <p className="text-sm text-purple-600 mt-1">Encontrados <strong>{loteDesligamentos.length} colaboradores</strong> na planilha.</p>
-                
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-sm font-medium text-purple-800">Processar este lote como:</span>
-                  <select value={tipoLote} onChange={(e) => setTipoLote(e.target.value)} className="p-1.5 border border-purple-300 rounded-md text-sm outline-none bg-white text-purple-900 font-medium">
-                    <option value="exclusao">Exclusão (Desligamentos)</option>
-                    <option value="adesao">Adesão (Novos Titulares)</option>
-                    <option value="mudanca_plano">Mudança de Plano</option>
-                  </select>
-                </div>
-              </div>
-              <button onClick={handleProcessarLote} className="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto h-fit mt-auto">
-                Realizar Triagem em Lote
-              </button>
-            </div>
-          )}
-        </div>
-
-        {resultado && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in duration-300">
             
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-bold text-gray-800">{resultado.nome}</h3>
-                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-bold rounded uppercase tracking-wider">{resultado.tipo.replace('_', ' ')}</span>
-                </div>
-                <p className="text-sm text-gray-500 mt-1">CPF: {cpfBusca} • Evento: {dataDesligamento.split('-').reverse().join('/')}</p>
-                {resultado.custoTotal > 0 && (
-                  <p className="text-sm text-orange-600 font-bold mt-1 flex items-center gap-1"><DollarSign size={16}/> Custo Estimado na Fatura: {formatarMoeda(resultado.custoTotal)} / mês</p>
-                )}
-              </div>
-              
-              {resultado.tipo === 'exclusao' && (
-                <div className="mt-4 md:mt-0 w-full md:w-auto">
-                  <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className={`w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium ${motivo ? 'bg-green-50 border-green-300 text-green-800' : 'border-orange-300 bg-orange-50 text-orange-800'}`}>
-                    <option value="">⚠️ Obrigatório: Regra ANS...</option>
-                    <option value="pedido_demissao">Pedido de demissão</option>
-                    <option value="sem_justa_causa">Sem justa causa</option>
-                    <option value="com_justa_causa">Com justa causa</option>
-                    <option value="aposentadoria">Aposentadoria</option>
-                  </select>
-                </div>
-              )}
-            </div>
+            <div class="flex flex-wrap gap-2">
+                <a id="btnDownloadOficial" class="hidden items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow text-sm font-bold whitespace-nowrap" title="Baixar o arquivo em branco anexado">
+                    <i data-lucide="download" class="w-4 h-4"></i> Baixar Formulário Oficial
+                </a>
+                <button id="btnDownloadOficialDisabled" disabled class="flex items-center gap-2 px-6 py-2 bg-gray-100 border border-gray-200 text-gray-400 rounded-lg cursor-not-allowed text-sm font-bold whitespace-nowrap" title="Anexe o formulário primeiro para poder baixar">
+                    <i data-lucide="download" class="w-4 h-4"></i> Baixar Formulário Oficial
+                </button>
 
-            {resultado.tipo === 'exclusao' && (
-              <div className="mb-6 space-y-2">
-                {calcularDiasDesdeRescisao(dataDesligamento) > 30 && (
-                  <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
-                    <AlertTriangle size={18} className="shrink-0" />
-                    <div>
-                      <strong>Atenção:</strong> Já se passaram <strong>{calcularDiasDesdeRescisao(dataDesligamento)} dias</strong> do evento. O prazo máximo legal de 30 dias expirou. <u>Proceda com a exclusão obrigatória</u>.
+                <label class="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-sm font-medium whitespace-nowrap cursor-pointer shadow-sm">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i> <span id="lblAnexarForm">Anexar Formulário</span>
+                    <input type="file" id="inputPdfOficial" accept="application/pdf" class="hidden" />
+                </label>
+            </div>
+        </div>
+
+        <!-- ÁREA DE ABASTECIMENTO -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <button onclick="toggleAbastecimento()" class="w-full p-6 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                <div class="flex flex-col items-start">
+                    <h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                        <i data-lucide="upload-cloud" class="text-gray-400 w-5 h-5"></i> 1. Arquivos de Origem (.CSV)
+                    </h2>
+                    <p class="text-xs text-orange-600 mt-1 font-medium bg-orange-50 px-2 py-0.5 rounded">
+                        ⚠️ Por segurança, os ficheiros de planilhas não são salvos na nuvem. Recarregue-os a cada nova sessão.
+                    </p>
+                </div>
+                <div class="text-gray-500 bg-gray-100 p-1.5 rounded-full" id="iconeAbastecimentoToggle">
+                    <i data-lucide="chevron-down" class="w-5 h-5"></i>
+                </div>
+            </button>
+
+            <div id="areaAbastecimento" class="hidden p-6 pt-0 border-t border-gray-100 fade-in">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                    <div id="boxBase" class="p-4 rounded-lg border-2 border-dashed border-gray-300">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Base RH (Opcional)</label>
+                        <input type="file" id="fileBase" accept=".csv" class="text-xs w-full" />
                     </div>
-                  </div>
-                )}
-                {motivo && motivo !== 'sem_justa_causa' && (
-                  <div className="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm animate-in fade-in">
-                    <AlertTriangle size={18} className="shrink-0" />
-                    <div>
-                      <strong>Atenção:</strong> O direito de manutenção aplica-se apenas a demissões "Sem Justa Causa". <u>Proceda com a exclusão obrigatória</u>.
+                    <div id="boxSaude" class="p-4 rounded-lg border-2 border-dashed border-gray-300">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Fatura Saúde</label>
+                        <input type="file" id="fileSaude" accept=".csv" class="text-xs w-full" />
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className={`p-4 rounded-xl border-2 ${resultado.saude.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className={`font-bold ${resultado.saude.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Saúde</h4>
-                  {resultado.saude.ativo && (
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" checked={manterSaude} onChange={(e) => setManterSaude(e.target.checked)} className="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
-                      Incluir no PDF
-                    </label>
-                  )}
+                    <div id="boxDental" class="p-4 rounded-lg border-2 border-dashed border-gray-300">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Fatura Dental</label>
+                        <input type="file" id="fileDental" accept=".csv" class="text-xs w-full" />
+                    </div>
+                    <div id="boxLote" class="p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                        <label class="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><i data-lucide="list-checks" class="w-4 h-4"></i> Lote de Desligamentos</label>
+                        <input type="file" id="fileLote" accept=".csv" class="text-xs w-full" />
+                        <p class="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática.</p>
+                    </div>
                 </div>
-                {resultado.saude.ativo ? (
-                  <div className="space-y-1 text-sm text-gray-700">
-                    <p><span className="text-gray-500">Carteirinha:</span> {resultado.saude.carteirinha}</p>
-                    <p><span className="text-gray-500">Início no Plano:</span> {resultado.saude.inicioPlano || 'Data não localizada'}</p>
-                    <p><span className="text-gray-500">Tempo de Contribuição:</span></p>
-                    <p className="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">{resultado.saude.tempo?.texto}</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">Colaborador não possui plano de saúde ativo.</p>
-                )}
-              </div>
-
-              <div className={`p-4 rounded-xl border-2 ${resultado.dental.ativo ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className={`font-bold ${resultado.dental.ativo ? 'text-green-700' : 'text-gray-400'}`}>Amil Dental</h4>
-                  {resultado.dental.ativo && (
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="checkbox" checked={manterDental} onChange={(e) => setManterDental(e.target.checked)} className="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
-                      Incluir no PDF
-                    </label>
-                  )}
-                </div>
-                {resultado.dental.ativo ? (
-                  <div className="space-y-1 text-sm text-gray-700">
-                    <p><span className="text-gray-500">Carteirinha:</span> {resultado.dental.carteirinha}</p>
-                    <p><span className="text-gray-500">Início no Plano:</span> {resultado.dental.inicioPlano || 'Data não localizada'}</p>
-                    <p><span className="text-gray-500">Tempo de Contribuição:</span></p>
-                    <p className="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">{resultado.dental.tempo?.texto}</p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">Colaborador não possui plano dental ativo.</p>
-                )}
-              </div>
             </div>
+        </div>
 
-            <div className="flex justify-end pt-6">
-              <button 
-                onClick={handleGerarPDF}
-                disabled={gerandoPdf}
-                className={`px-8 py-3 font-bold rounded-lg transition-all shadow flex items-center gap-3 ${
-                  gerandoPdf ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-900 text-white hover:bg-blue-800 hover:shadow-lg'
-                }`}
-              >
-                {gerandoPdf ? 'Processando Documento...' : 'Baixar Espelho (PDF)'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-              <Clock className="text-blue-600" /> 3. Controle de Movimentações Amil
+        <!-- ÁREA DE OPERAÇÃO E CÁLCULO -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i data-lucide="search" class="text-gray-400 w-5 h-5"></i> 2. Procurar e Calcular
             </h2>
-          </div>
-
-          {historico.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                <div>
-                  <p className="text-sm text-blue-600 font-bold uppercase tracking-wider">Total Pendente</p>
-                  <p className="text-3xl font-black text-blue-900 mt-1">{historicoPendentes.length}</p>
-                  <p className="text-xs text-blue-600 mt-1">Colaboradores aguardando ação</p>
+            
+            <div class="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                <div class="flex-1 w-full">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
+                    <input type="text" id="cpfBusca" placeholder="Ex: 55566677788" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <div className="bg-blue-200 text-blue-700 p-4 rounded-full shadow-inner"><Clock size={28}/></div>
-              </div>
-
-              <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                <div>
-                  <p className="text-sm text-orange-600 font-bold uppercase tracking-wider">Mensalidade em Risco</p>
-                  <p className="text-3xl font-black text-orange-900 mt-1">{formatarMoeda(custoTotalPendentes)}</p>
-                  <p className="text-xs text-orange-600 mt-1">Soma de todos os pendentes</p>
+                <div class="flex-1 w-full">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Data da Rescisão</label>
+                    <input type="date" id="dataDesligamento" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <div className="bg-orange-200 text-orange-700 p-4 rounded-full shadow-inner"><DollarSign size={28}/></div>
-              </div>
-
-              <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-center justify-between shadow-sm animate-in fade-in zoom-in duration-500">
-                <div>
-                  <p className="text-sm text-red-600 font-bold uppercase tracking-wider flex items-center gap-1"><AlertTriangle size={14}/> Custo Indevido Estimado</p>
-                  <p className="text-3xl font-black text-red-900 mt-1">{formatarMoeda(custoEmAtraso)}</p>
-                  <p className="text-xs text-red-600 mt-1">Ref. aos {pendentesAtrasados.length} colaboradores com SLA vencido</p>
-                </div>
-                <div className="bg-red-200 text-red-700 p-4 rounded-full shadow-inner"><TrendingDown size={28}/></div>
-              </div>
-            </div>
-          )}
-          
-          <div className="flex flex-col sm:flex-row justify-between border-b border-gray-200 mb-4 gap-4 pb-2">
-            <div className="flex gap-4">
-              <button
-                onClick={() => setAbaAtiva('pendentes')}
-                className={`py-2 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${abaAtiva === 'pendentes' ? 'border-blue-600 text-blue-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-              >
-                <Inbox size={18}/> Em Andamento <span className={`${abaAtiva === 'pendentes' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs`}>{historicoPendentes.length}</span>
-              </button>
-              <button
-                onClick={() => setAbaAtiva('concluidos')}
-                className={`py-2 px-1 font-semibold text-sm flex items-center gap-2 border-b-2 transition-colors ${abaAtiva === 'concluidos' ? 'border-green-600 text-green-800' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-              >
-                <Archive size={18}/> Processados / Concluídos <span className={`${abaAtiva === 'concluidos' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs`}>{historicoConcluidos.length}</span>
-              </button>
+                <button onclick="handleBuscar()" class="w-full md:w-auto px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm whitespace-nowrap">
+                    Processar Dados
+                </button>
             </div>
             
-            <div className="flex gap-2 items-center flex-wrap sm:justify-end">
-              <button 
-                onClick={handleEnviarEmailPendentes}
-                className="text-xs flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg hover:bg-blue-100 font-bold transition-colors border border-blue-200 shadow-sm whitespace-nowrap"
-                title="Abre seu e-mail com a lista de pendentes formatada"
-              >
-                <Mail size={16} /> E-mail (Lista)
-              </button>
-              <button 
-                onClick={handleExportarSLA}
-                className="text-xs flex items-center gap-1.5 bg-orange-50 text-orange-700 px-3 py-2 rounded-lg hover:bg-orange-100 font-bold transition-colors border border-orange-200 shadow-sm whitespace-nowrap"
-                title="Relatório focado nos prazos de SLA (10 dias)"
-              >
-                <Clock size={16} /> Relatório de SLA
-              </button>
-              <button 
-                onClick={handleExportarCSV}
-                className="text-xs flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-100 font-bold transition-colors border border-emerald-200 shadow-sm whitespace-nowrap"
-                title="Baixa a tabela atual em formato Excel"
-              >
-                <FileSpreadsheet size={16} /> Exportar Excel
-              </button>
+            <div id="erroPesquisa" class="hidden mt-4 p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200">
+                <i data-lucide="alert-circle" class="w-4 h-4"></i> <span id="erroPesquisaMsg"></span>
             </div>
-          </div>
 
-          {itensExibidos.length === 0 ? (
-            <p className="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum registro nesta aba.</p>
-          ) : (
-            <div className="overflow-x-auto pb-4">
-              <table className="w-full text-sm text-left text-gray-600">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3">Data</th>
-                    <th className="px-4 py-3">Colaborador</th>
-                    <th className="px-4 py-3">Evento</th>
-                    <th className="px-4 py-3" style={{ minWidth: '400px' }}>Status, Ações e Observações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...itensExibidos].sort((a, b) => {
-                    const aSem = a.status === 'Sem plano ativo (Baixa automática)';
-                    const bSem = b.status === 'Sem plano ativo (Baixa automática)';
-                    if (aSem && !bSem) return 1;
-                    if (!aSem && bSem) return -1;
-                    return 0;
-                  }).map((item) => {
-                    const temAtraso = !['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && verificarAtraso(item.dataRescisao, item.dataEntrega);
-                    const planoAtivo = item.status !== 'Sem plano ativo (Baixa automática)';
-                    const diasPassadosRescisao = calcularDiasDesdeRescisao(item.dataRescisao);
-                    const perdeuPrazo30Dias = planoAtivo && diasPassadosRescisao > 30;
-                    const semDireitoMotivo = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa';
+            <!-- ÁREA DE LOTE CARREGADO -->
+            <div id="areaLoteLoaded" class="hidden mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-50 p-4 rounded-lg border border-purple-100 gap-4 fade-in">
+                <div>
+                    <h3 class="font-semibold text-purple-800 flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4"></i> Processamento Automático (Triagem)</h3>
+                    <p class="text-sm text-purple-600 mt-1">Encontrados <strong id="qtdLote">0</strong> colaboradores na planilha.</p>
+                </div>
+                <button onclick="handleProcessarLote()" class="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto">
+                    Realizar Triagem em Lote
+                </button>
+            </div>
+        </div>
 
-                    return (
-                      <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/30">
-                        <td className="px-4 py-4 align-top pt-5">{item.dataGeracao.split(' ')[0]}</td>
-                        <td className="px-4 py-4 align-top pt-5 font-medium text-gray-800">
-                          {item.nome}
-                          <br/><span className="text-xs text-gray-400 font-normal">CPF: {item.cpf}</span>
-                          
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                              item.tipoMovimento === 'adesao' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              item.tipoMovimento === 'inclusao_dep' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                              item.tipoMovimento === 'mudanca_plano' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                              'bg-red-50 text-red-700 border-red-200'
-                            }`}>
-                              {item.tipoMovimento === 'adesao' ? 'ADESÃO' : 
-                               item.tipoMovimento === 'inclusao_dep' ? 'INC. DEPENDENTE' : 
-                               item.tipoMovimento === 'mudanca_plano' ? 'MUDANÇA PLANO' : 'EXCLUSÃO'}
-                            </span>
-                            
-                            {item.custoTotal > 0 && (
-                              <div className="text-[10px] font-bold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 flex items-center gap-1 w-max">
-                                <DollarSign size={10}/> {formatarMoeda(item.custoTotal)} / mês
-                              </div>
-                            )}
-                          </div>
+        <!-- ESPELHO DE RESULTADOS -->
+        <div id="areaResultado" class="hidden bg-white p-6 rounded-xl shadow-sm border border-gray-200 fade-in">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-4">
+                <div>
+                    <h3 id="resNome" class="text-xl font-bold text-gray-800"></h3>
+                    <p id="resInfo" class="text-sm text-gray-500"></p>
+                </div>
+                <div class="mt-4 md:mt-0 w-full md:w-auto">
+                    <select id="motivoRescisao" onchange="atualizarEstiloMotivo()" class="w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium border-orange-300 bg-orange-50 text-orange-800">
+                        <option value="">⚠️ Obrigatório: Regra ANS...</option>
+                        <option value="pedido_demissao">Pedido de demissão</option>
+                        <option value="sem_justa_causa">Sem justa causa</option>
+                        <option value="com_justa_causa">Com justa causa</option>
+                        <option value="aposentadoria">Aposentadoria</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="avisosRegras" class="mb-6 space-y-2"></div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- CARD SAÚDE -->
+                <div id="cardSaude" class="p-4 rounded-xl border-2 border-gray-200 bg-gray-50">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 id="tituloSaude" class="font-bold text-gray-400">Amil Saúde</h4>
+                        <label id="lblManterSaude" class="hidden flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" id="chkManterSaude" checked class="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
+                            Incluir no PDF
+                        </label>
+                    </div>
+                    <div id="conteudoSaude"></div>
+                </div>
+
+                <!-- CARD DENTAL -->
+                <div id="cardDental" class="p-4 rounded-xl border-2 border-gray-200 bg-gray-50">
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 id="tituloDental" class="font-bold text-gray-400">Amil Dental</h4>
+                        <label id="lblManterDental" class="hidden flex items-center gap-2 text-sm cursor-pointer">
+                            <input type="checkbox" id="chkManterDental" checked class="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
+                            Incluir no PDF
+                        </label>
+                    </div>
+                    <div id="conteudoDental"></div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-6">
+                <button id="btnGerarPdf" onclick="handleGerarPDF()" class="px-8 py-3 font-bold rounded-lg transition-all shadow flex items-center gap-3 bg-blue-900 text-white hover:bg-blue-800 hover:shadow-lg">
+                    Baixar Espelho (PDF)
+                </button>
+            </div>
+        </div>
+
+        <!-- ÁREA DE HISTÓRICO -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <i data-lucide="clock" class="text-blue-600 w-5 h-5"></i> 3. Controlo de Movimentações Amil
+                </h2>
+                <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
+                    <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
+                </div>
+            </div>
+            
+            <div id="tabelaHistoricoContainer" class="overflow-x-auto pb-4">
+                <p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controlo gerado nesta sessão.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- SCRIPT DE LÓGICA E FIREBASE (ES MODULE) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // ESTADO GLOBAL DA APLICAÇÃO
+        // ==========================================
+        const state = {
+            baseSistema: [], faturaSaude: [], faturaDental: [], loteDesligamentos: [],
+            resultado: null, historico: [], user: null, db: null,
+            pdfOficialUrl: null, pdfOficialNome: '',
+            appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'
+        };
+
+        // Inicializar ícones
+        lucide.createIcons();
+
+        // ==========================================
+        // UTILITÁRIOS E ALERTAS
+        // ==========================================
+        window.mostrarAlerta = (msg, tipo = 'sucesso') => {
+            const el = document.getElementById(tipo === 'erro' ? 'alertaErro' : 'alertaSucesso');
+            const msgEl = document.getElementById(tipo === 'erro' ? 'alertaErroMsg' : 'alertaSucessoMsg');
+            msgEl.textContent = msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 5000);
+        };
+
+        window.toggleAbastecimento = () => {
+            const area = document.getElementById('areaAbastecimento');
+            const icone = document.getElementById('iconeAbastecimentoToggle');
+            if (area.classList.contains('hidden')) {
+                area.classList.remove('hidden');
+                icone.innerHTML = `<i data-lucide="chevron-up" class="w-5 h-5"></i>`;
+            } else {
+                area.classList.add('hidden');
+                icone.innerHTML = `<i data-lucide="chevron-down" class="w-5 h-5"></i>`;
+            }
+            lucide.createIcons();
+        };
+
+        const updateStatusNuvem = (salvando) => {
+            const el = document.getElementById('statusNuvem');
+            if (salvando) {
+                el.className = "text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded flex items-center gap-1 animate-pulse";
+                el.innerHTML = `<i data-lucide="cloud" class="w-3 h-3"></i> A Guardar...`;
+            } else if (state.user) {
+                el.className = "text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded flex items-center gap-1";
+                el.innerHTML = `<i data-lucide="cloud" class="w-3 h-3"></i> Guardado na Nuvem`;
+            } else {
+                el.className = "hidden";
+            }
+            lucide.createIcons();
+        };
+
+        // ==========================================
+        // FIREBASE INICIALIZAÇÃO
+        // ==========================================
+        let auth, db;
+        try {
+            const configStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+            const firebaseConfig = JSON.parse(configStr);
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            state.db = db;
+        } catch (e) {
+            console.warn("Firebase não configurado.", e);
+        }
+
+        if (auth) {
+            const initAuth = async () => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) { console.error("Erro auth:", error); }
+            };
+            initAuth();
+
+            onAuthStateChanged(auth, async (user) => {
+                state.user = user;
+                updateStatusNuvem(false);
+                if (user && db) {
+                    // Carregar config (PDF Oficial)
+                    try {
+                        const configRef = doc(db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'geral');
+                        const docSnap = await getDoc(configRef);
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            if (data.pdfOficialBase64) {
+                                state.pdfOficialUrl = data.pdfOficialBase64;
+                                state.pdfOficialNome = data.pdfOficialNome || 'FORMULARIO_AMIL.pdf';
+                                atualizarBotoesPdfOficial();
+                            }
+                        }
+                    } catch (e) { console.error(e); }
+
+                    // Ouvir Histórico
+                    const colRef = collection(db, 'artifacts', state.appId, 'public', 'data', 'historicoAmil');
+                    onSnapshot(colRef, (snapshot) => {
+                        const dados = [];
+                        snapshot.forEach((doc) => dados.push({ ...doc.data(), id: Number(doc.id) }));
+                        state.historico = dados.sort((a, b) => b.id - a.id);
+                        renderHistorico();
+                    }, (error) => console.error(error));
+                }
+            });
+        }
+
+        const salvarNoFirestore = async (registro) => {
+            if (!state.user || !state.db) return;
+            updateStatusNuvem(true);
+            try {
+                const docRef = doc(state.db, 'artifacts', state.appId, 'public', 'data', 'historicoAmil', registro.id.toString());
+                await setDoc(docRef, registro);
+            } catch (error) {
+                console.error(error);
+                mostrarAlerta("Erro ao guardar na nuvem.", "erro");
+            } finally {
+                setTimeout(() => updateStatusNuvem(false), 800);
+            }
+        };
+
+        // ==========================================
+        // LÓGICA DE FICHEIROS E CSV
+        // ==========================================
+        const atualizarBotoesPdfOficial = () => {
+            const btnDownload = document.getElementById('btnDownloadOficial');
+            const btnDisabled = document.getElementById('btnDownloadOficialDisabled');
+            const lbl = document.getElementById('lblAnexarForm');
+
+            if (state.pdfOficialUrl) {
+                btnDownload.href = state.pdfOficialUrl;
+                btnDownload.download = state.pdfOficialNome || 'FORMULARIO_AMIL.pdf';
+                btnDownload.classList.remove('hidden');
+                btnDownload.classList.add('flex');
+                btnDisabled.classList.add('hidden');
+                lbl.textContent = 'Substituir Formulário';
+            } else {
+                btnDownload.classList.add('hidden');
+                btnDownload.classList.remove('flex');
+                btnDisabled.classList.remove('hidden');
+                lbl.textContent = 'Anexar Formulário';
+            }
+        };
+
+        document.getElementById('inputPdfOficial').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    state.pdfOficialUrl = reader.result;
+                    state.pdfOficialNome = file.name;
+                    atualizarBotoesPdfOficial();
+                    mostrarAlerta('Formulário anexado e guardado na nuvem!');
+                    if (state.user && state.db) {
+                        try {
+                            const ref = doc(state.db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'geral');
+                            await setDoc(ref, { pdfOficialBase64: reader.result, pdfOficialNome: file.name }, { merge: true });
+                        } catch (err) { console.error(err); }
+                    }
+                };
+                reader.readAsDataURL(file);
+            } else if (file) {
+                mostrarAlerta("Por favor, envie apenas ficheiros PDF.", "erro");
+            }
+        });
+
+        const processarCSV = (arquivo, tipo) => {
+            if (!arquivo) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const texto = e.target.result;
+                const delimitador = texto.indexOf(';') > -1 ? ';' : ','; 
+                const linhas = texto.split('\n').filter(linha => linha.trim() !== '');
+                if (linhas.length < 2) return;
+                
+                let cabecalhos = linhas[0].split(delimitador).map(c => c.trim().toLowerCase());
+                if(cabecalhos.length > 0) cabecalhos[0] = cabecalhos[0].replace(/^\uFEFF/, '');
+
+                const dados = linhas.slice(1).map(linha => {
+                    const valores = linha.split(delimitador).map(v => v.trim());
+                    let obj = {};
+                    cabecalhos.forEach((cab, idx) => obj[cab] = valores[idx]);
+                    return obj;
+                });
+
+                state[tipo] = dados;
+                
+                // Estilo visual de ficheiro carregado
+                let boxId = tipo === 'baseSistema' ? 'boxBase' : tipo === 'faturaSaude' ? 'boxSaude' : tipo === 'faturaDental' ? 'boxDental' : 'boxLote';
+                const box = document.getElementById(boxId);
+                box.classList.remove('border-gray-300', 'bg-gray-50');
+                box.classList.add(tipo === 'loteDesligamentos' ? 'border-purple-400' : 'border-green-400');
+                box.classList.add(tipo === 'loteDesligamentos' ? 'bg-purple-50' : 'bg-green-50');
+
+                if (tipo === 'loteDesligamentos' && dados.length > 0) {
+                    document.getElementById('areaLoteLoaded').classList.remove('hidden');
+                    document.getElementById('qtdLote').textContent = dados.length;
+                }
+            };
+            reader.readAsText(arquivo, 'utf-8');
+        };
+
+        document.getElementById('fileBase').addEventListener('change', e => processarCSV(e.target.files[0], 'baseSistema'));
+        document.getElementById('fileSaude').addEventListener('change', e => processarCSV(e.target.files[0], 'faturaSaude'));
+        document.getElementById('fileDental').addEventListener('change', e => processarCSV(e.target.files[0], 'faturaDental'));
+        document.getElementById('fileLote').addEventListener('change', e => processarCSV(e.target.files[0], 'loteDesligamentos'));
+
+        // ==========================================
+        // MOTOR DE BUSCA
+        // ==========================================
+        const limparDoc = doc => doc ? doc.toString().replace(/\D/g, '') : '';
+        const encontrarValor = (obj, palavras) => {
+            if (!obj) return null;
+            const chave = Object.keys(obj).find(k => palavras.some(p => k.includes(p)));
+            return chave ? obj[chave] : null;
+        };
+        const extrairNome = reg => encontrarValor(reg, ['nome', 'titular', 'colaborador', 'beneficiario']);
+        const extrairCpf = reg => encontrarValor(reg, ['cpf']);
+        const extrairCarteirinha = reg => encontrarValor(reg, ['carteirinha', 'matricula', 'código', 'codigo']);
+        const extrairAdmissao = reg => encontrarValor(reg, ['admiss', 'inicio', 'início', 'contrata', 'entrada']);
+        
+        const formatarData = (dataRaw) => {
+            if (!dataRaw) return null;
+            const str = String(dataRaw).trim().split(' ')[0];
+            if (str.includes('-')) {
+                const parts = str.split('-');
+                if (parts[0].length === 4) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            }
+            if (!isNaN(str) && Number(str) > 10000) {
+                const excelDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+                const d = new Date(excelDate.getTime() + excelDate.getTimezoneOffset() * 60000);
+                return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+            }
+            return str;
+        };
+
+        const extrairDataInicio = reg => {
+            if (!reg) return null;
+            return encontrarValor(reg, ['inclusão', 'inclusao', 'vigencia', 'vigência', 'inicio', 'início', 'admissao', 'admissão']);
+        };
+
+        const calcularTempo = (dataInicio, dataFim) => {
+            const conv = strDate => {
+                if (!strDate) return new Date('Inválida');
+                const str = String(strDate).trim().split(' ')[0];
+                if (str.includes('/')) {
+                    const p = str.split('/');
+                    if (p[2]?.length === 4) return new Date(p[2], p[1] - 1, p[0]);
+                    if (p[0]?.length === 4) return new Date(p[0], p[1] - 1, p[2]);
+                }
+                if (str.includes('-')) {
+                    const p = str.split('-');
+                    if (p[0].length === 4) return new Date(p[0], p[1] - 1, p[2]);
+                    return new Date(p[2], p[1] - 1, p[0]);
+                }
+                if (!isNaN(str) && Number(str) > 10000) {
+                    const ex = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+                    return new Date(ex.getTime() + ex.getTimezoneOffset() * 60000);
+                }
+                return new Date(str);
+            };
+
+            const ini = conv(dataInicio);
+            const fim = conv(dataFim);
+
+            if (isNaN(ini) || isNaN(fim)) return { texto: "Data não identificada", anos: 0, meses: 0, dias: 0 };
+            if (fim < ini) return { texto: "Desligamento anterior ao início", anos: 0, meses: 0, dias: 0 };
+
+            let anos = fim.getFullYear() - ini.getFullYear();
+            let meses = fim.getMonth() - ini.getMonth();
+            let dias = fim.getDate() - ini.getDate();
+
+            if (dias < 0) { meses--; dias += new Date(fim.getFullYear(), fim.getMonth(), 0).getDate(); }
+            if (meses < 0) { anos--; meses += 12; }
+            return { texto: `${anos} anos, ${meses} meses e ${dias} dias`, anos, meses, dias };
+        };
+
+        const calcularDiasDesdeRescisao = (dataStr) => {
+            if (!dataStr) return 0;
+            let d, m, y;
+            if (dataStr.includes('/')) { [d, m, y] = dataStr.split('/'); } 
+            else if (dataStr.includes('-')) {
+                const parts = dataStr.split('-');
+                if (parts[0].length === 4) { y = parts[0]; m = parts[1]; d = parts[2]; } 
+                else { d = parts[0]; m = parts[1]; y = parts[2]; }
+            } else return 0;
+            
+            const dataR = new Date(`${y}-${m}-${d}T00:00:00`);
+            return Math.floor((new Date().getTime() - dataR.getTime()) / (1000 * 60 * 60 * 24));
+        };
+
+        window.atualizarEstiloMotivo = () => {
+            const s = document.getElementById('motivoRescisao');
+            if (s.value) {
+                s.className = "w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium bg-green-50 border-green-300 text-green-800";
+            } else {
+                s.className = "w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium border-orange-300 bg-orange-50 text-orange-800";
+            }
+            renderAvisosRegras();
+        };
+
+        window.handleBuscar = () => {
+            const errEl = document.getElementById('erroPesquisa');
+            errEl.classList.add('hidden');
+            document.getElementById('areaResultado').classList.add('hidden');
+
+            const cpf = limparDoc(document.getElementById('cpfBusca').value);
+            const dtDesligamento = document.getElementById('dataDesligamento').value;
+
+            if (!cpf || !dtDesligamento) {
+                document.getElementById('erroPesquisaMsg').textContent = 'Preencha o CPF e a Data de Rescisão.';
+                errEl.classList.remove('hidden'); return;
+            }
+            if (state.faturaSaude.length === 0 && state.faturaDental.length === 0) {
+                document.getElementById('erroPesquisaMsg').textContent = 'As faturas de Saúde e/ou Dental precisam estar carregadas.';
+                errEl.classList.remove('hidden'); return;
+            }
+
+            const cad = state.baseSistema.find(f => limparDoc(extrairCpf(f)) === cpf);
+            const saude = state.faturaSaude.find(f => limparDoc(extrairCpf(f)) === cpf);
+            const dental = state.faturaDental.find(f => limparDoc(extrairCpf(f)) === cpf);
+
+            if (!cad && !saude && !dental) {
+                document.getElementById('erroPesquisaMsg').textContent = 'Colaborador não encontrado.';
+                errEl.classList.remove('hidden'); return;
+            }
+
+            const nome = extrairNome(cad) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
+            const adm = formatarData(extrairAdmissao(cad)) || 'Não informado na Base';
+            const iniSaude = extrairDataInicio(saude);
+            const iniDental = extrairDataInicio(dental);
+
+            state.resultado = {
+                nome, admissao: adm, dtDesligamento, cpf,
+                saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude)||saude.carteirinha, inicioPlano: iniSaude, tempo: calcularTempo(iniSaude, dtDesligamento) } : { ativo: false },
+                dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental)||dental.carteirinha, inicioPlano: iniDental, tempo: calcularTempo(iniDental, dtDesligamento) } : { ativo: false }
+            };
+
+            renderResultado();
+        };
+
+        const renderAvisosRegras = () => {
+            const dias = calcularDiasDesdeRescisao(state.resultado.dtDesligamento);
+            const motivo = document.getElementById('motivoRescisao').value;
+            const ct = document.getElementById('avisosRegras');
+            ct.innerHTML = '';
+
+            if (dias > 30) {
+                ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> Já se passaram <strong>${dias} dias</strong> da rescisão. O prazo máximo expirou. <u>Exclusão obrigatória</u>.</div></div>`;
+            }
+            if (motivo && motivo !== 'sem_justa_causa') {
+                ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> O direito de manutenção aplica-se apenas a "Sem Justa Causa". <u>Exclusão obrigatória</u>.</div></div>`;
+            }
+            lucide.createIcons();
+        };
+
+        const renderResultado = () => {
+            const res = state.resultado;
+            if (!res) return;
+
+            document.getElementById('areaResultado').classList.remove('hidden');
+            document.getElementById('resNome').textContent = res.nome;
+            document.getElementById('resInfo').textContent = `CPF: ${res.cpf} • Demissão: ${res.dtDesligamento.split('-').reverse().join('/')}`;
+            document.getElementById('motivoRescisao').value = "";
+            atualizarEstiloMotivo();
+
+            // Saúde
+            const cSaude = document.getElementById('cardSaude');
+            const titSaude = document.getElementById('tituloSaude');
+            const contSaude = document.getElementById('conteudoSaude');
+            const lblManterSaude = document.getElementById('lblManterSaude');
+            
+            if (res.saude.ativo) {
+                cSaude.className = "p-4 rounded-xl border-2 border-green-500 bg-white";
+                titSaude.className = "font-bold text-green-700";
+                lblManterSaude.classList.remove('hidden');
+                document.getElementById('chkManterSaude').checked = true;
+                contSaude.innerHTML = `
+                    <div class="space-y-1 text-sm text-gray-700">
+                        <p><span class="text-gray-500">Carteirinha:</span> ${res.saude.carteirinha}</p>
+                        <p><span class="text-gray-500">Início:</span> ${res.saude.inicioPlano || 'Não localizado'}</p>
+                        <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
+                        <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.saude.tempo?.texto}</p>
+                    </div>`;
+            } else {
+                cSaude.className = "p-4 rounded-xl border-2 border-gray-200 bg-gray-50";
+                titSaude.className = "font-bold text-gray-400";
+                lblManterSaude.classList.add('hidden');
+                contSaude.innerHTML = `<p class="text-sm text-gray-400 italic">Não possui plano de saúde ativo.</p>`;
+            }
+
+            // Dental
+            const cDental = document.getElementById('cardDental');
+            const titDental = document.getElementById('tituloDental');
+            const contDental = document.getElementById('conteudoDental');
+            const lblManterDental = document.getElementById('lblManterDental');
+            
+            if (res.dental.ativo) {
+                cDental.className = "p-4 rounded-xl border-2 border-green-500 bg-white";
+                titDental.className = "font-bold text-green-700";
+                lblManterDental.classList.remove('hidden');
+                document.getElementById('chkManterDental').checked = true;
+                contDental.innerHTML = `
+                    <div class="space-y-1 text-sm text-gray-700">
+                        <p><span class="text-gray-500">Carteirinha:</span> ${res.dental.carteirinha}</p>
+                        <p><span class="text-gray-500">Início:</span> ${res.dental.inicioPlano || 'Não localizado'}</p>
+                        <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
+                        <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.dental.tempo?.texto}</p>
+                    </div>`;
+            } else {
+                cDental.className = "p-4 rounded-xl border-2 border-gray-200 bg-gray-50";
+                titDental.className = "font-bold text-gray-400";
+                lblManterDental.classList.add('hidden');
+                contDental.innerHTML = `<p class="text-sm text-gray-400 italic">Não possui plano dental ativo.</p>`;
+            }
+        };
+
+        // ==========================================
+        // GERAÇÃO DE PDF
+        // ==========================================
+        const construtorDePdf = async (dadosPdf) => {
+            const { nome, cpf, admissao, dataRescisao, motivo, saude, dental } = dadosPdf;
+            const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
+            const pdfDoc = await PDFDocument.create();
+            const page = pdfDoc.addPage([595.28, 841.89]);
+            
+            const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
+            const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+            
+            let yOffset = 800; const margemEsq = 50;
+
+            const escrever = (t, s=12, isB=false, c=rgb(0.2,0.2,0.2)) => {
+                page.drawText(t||'', { x: margemEsq, y: yOffset, size: s, font: isB ? fontBold : fontNormal, color: c });
+                yOffset -= (s + 10);
+            };
+            const escreverLinha = (lbl, val) => {
+                page.drawText(lbl, { x: margemEsq, y: yOffset, size: 12, font: fontBold, color: rgb(0.3,0.3,0.3) });
+                page.drawText(val||'Não informado', { x: margemEsq + 180, y: yOffset, size: 12, font: fontNormal, color: rgb(0,0,0) });
+                yOffset -= 22;
+            };
+
+            escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0,0.2,0.6));
+            escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5,0.5,0.5));
+            yOffset -= 20;
+
+            escrever('DADOS DO COLABORADOR', 14, true, rgb(0,0,0)); yOffset -= 5;
+            escreverLinha('Nome Completo:', nome);
+            escreverLinha('CPF:', cpf);
+            escreverLinha('Data de Admissão:', admissao);
+            escreverLinha('Data de Rescisão:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
+            
+            const motivosMap = {
+                'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
+                'sem_justa_causa': 'Demissão/exoneração sem justa causa',
+                'com_justa_causa': 'Demissão por justa causa',
+                'aposentadoria': 'Aposentadoria'
+            };
+            escreverLinha('Motivo da Rescisão:', motivosMap[motivo] || motivosMap['sem_justa_causa']);
+            yOffset -= 20;
+
+            escrever('PLANO AMIL SAÚDE', 14, true, rgb(0,0,0)); yOffset -= 5;
+            if (saude && saude.ativo) {
+                escreverLinha('Carteirinha:', saude.carteirinha);
+                escreverLinha('Data de Início no Plano:', saude.inicioPlano);
+                escreverLinha('Tempo de Contribuição:', saude.tempo?.texto);
+                escreverLinha('Fracionado:', `${saude.tempo?.anos} Anos | ${saude.tempo?.meses} Meses | ${saude.tempo?.dias} Dias`);
+            } else escrever('Não possui plano de saúde ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+            yOffset -= 20;
+
+            escrever('PLANO AMIL DENTAL', 14, true, rgb(0,0,0)); yOffset -= 5;
+            if (dental && dental.ativo) {
+                escreverLinha('Carteirinha:', dental.carteirinha);
+                escreverLinha('Data de Início no Plano:', dental.inicioPlano);
+                escreverLinha('Tempo de Contribuição:', dental.tempo?.texto);
+                escreverLinha('Fracionado:', `${dental.tempo?.anos} Anos | ${dental.tempo?.meses} Meses | ${dental.tempo?.dias} Dias`);
+            } else escrever('Não possui plano dental ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+
+            yOffset = 50;
+            escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-PT'), 9, false, rgb(0.6,0.6,0.6));
+
+            return await pdfDoc.saveAsBase64({ dataUri: true });
+        };
+
+        window.handleGerarPDF = async () => {
+            const motivo = document.getElementById('motivoRescisao').value;
+            if (!motivo) { mostrarAlerta("⚠️ Escolha o motivo da rescisão.", "erro"); return; }
+            
+            const btn = document.getElementById('btnGerarPdf');
+            btn.textContent = 'A processar Documento...'; btn.classList.add('opacity-50');
+
+            try {
+                const manterSaude = document.getElementById('chkManterSaude')?.checked ?? false;
+                const manterDental = document.getElementById('chkManterDental')?.checked ?? false;
+                
+                const dataUri = await construtorDePdf({
+                    nome: state.resultado.nome, cpf: state.resultado.cpf, admissao: state.resultado.admissao,
+                    dataRescisao: state.resultado.dtDesligamento, motivo: motivo,
+                    saude: manterSaude ? state.resultado.saude : { ativo: false },
+                    dental: manterDental ? state.resultado.dental : { ativo: false }
+                });
+
+                const a = document.createElement('a'); a.href = dataUri;
+                a.download = `Espelho_Amil_${state.resultado.nome.replace(/\s+/g, '_')}.pdf`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+
+                mostrarAlerta(`Espelho gerado com sucesso!`);
+                
+                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.status === 'Pendente de Exclusão');
+                const dtFmt = state.resultado.dtDesligamento.includes('-') ? state.resultado.dtDesligamento.split('-').reverse().join('/') : state.resultado.dtDesligamento;
+                
+                let novoReg;
+                if (idx !== -1) {
+                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', dataGeracao: new Date().toLocaleString('pt-PT'), pdfUrl: dataUri, observacao: 'Espelho de exclusão gerado.' };
+                } else {
+                    novoReg = { id: Date.now(), dataGeracao: new Date().toLocaleString('pt-PT'), nome: state.resultado.nome, cpf: state.resultado.cpf, dataRescisao: dtFmt, status: 'Gerado (Aguardando ação)', dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri };
+                }
+                salvarNoFirestore(novoReg);
+            } catch (err) {
+                console.error(err); mostrarAlerta("Erro ao gerar PDF.", "erro");
+            } finally {
+                btn.innerHTML = 'Baixar Espelho (PDF)'; btn.classList.remove('opacity-50');
+            }
+        };
+
+        window.handleGerarPdfDaLinha = async (id) => {
+            const item = state.historico.find(h => h.id === id);
+            if(!item) return;
+
+            try {
+                const dataUri = await construtorDePdf({
+                    nome: item.nome, cpf: item.cpf, admissao: item.admissao, dataRescisao: item.dataRescisao,
+                    motivo: item.motivo || 'sem_justa_causa', saude: item.saude, dental: item.dental
+                });
+
+                const a = document.createElement('a'); a.href = dataUri;
+                a.download = `Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+
+                mostrarAlerta(`Espelho de ${item.nome} gerado com sucesso!`);
+                
+                const novoItem = { ...item, pdfUrl: dataUri, status: 'Gerado (Aguardando ação)', observacao: 'Espelho gerado em lote.' };
+                salvarNoFirestore(novoItem);
+            } catch (error) {
+                console.error(error); mostrarAlerta("Erro ao gerar PDF da linha.", "erro");
+            }
+        };
+
+        // ==========================================
+        // LOTE DE DESLIGAMENTOS
+        // ==========================================
+        window.handleProcessarLote = () => {
+            if (state.faturaSaude.length === 0 && state.faturaDental.length === 0) {
+                mostrarAlerta("⚠️ Carregue as faturas de Saúde e/ou Dental antes de processar o lote.", "erro");
+                return;
+            }
+
+            state.loteDesligamentos.forEach((registro, index) => {
+                const chaves = Object.keys(registro);
+                const cpfDigitado = limparDoc(extrairCpf(registro));
+                const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
+                let dataRaw = dataKey ? registro[dataKey] : '';
+                
+                let dataApresentacao = dataRaw;
+                if (dataRaw.includes('-')) {
+                    const parts = dataRaw.split('-');
+                    if (parts[0].length === 4) dataApresentacao = `${parts[2]}/${parts[1]}/${parts[0]}`; 
+                }
+
+                const cadastro = state.baseSistema.find(f => limparDoc(extrairCpf(f)) === cpfDigitado);
+                const saude = state.faturaSaude.find(f => limparDoc(extrairCpf(f)) === cpfDigitado);
+                const dental = state.faturaDental.find(f => limparDoc(extrairCpf(f)) === cpfDigitado);
+
+                let nome = extrairNome(registro) || extrairNome(cadastro) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
+                const temPlano = !!saude || !!dental;
+
+                const inicioSaude = extrairDataInicio(saude);
+                const inicioDental = extrairDataInicio(dental);
+                const admissaoRaw = extrairAdmissao(cadastro) || extrairAdmissao(registro);
+                const admissao = formatarData(admissaoRaw) || 'Não informado na Base';
+
+                const diasPassados = calcularDiasDesdeRescisao(dataApresentacao);
+                let obs = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Não possuía plano ativo nas faturas.';
+                if (temPlano && diasPassados > 30) obs = `⛔ Passaram ${diasPassados} dias da rescisão (prazo 30 dias). Exclusão obrigatória (perda do direito).`;
+
+                const novoItem = {
+                    id: Date.now() + index,
+                    dataGeracao: new Date().toLocaleString('pt-PT'), nome, cpf: cpfDigitado,
+                    dataRescisao: dataApresentacao, admissao, motivo: 'sem_justa_causa',
+                    saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude), inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataRaw) } : { ativo: false },
+                    dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental), inicioPlano: inicioDental, tempo: calcularTempo(inicioDental, dataRaw) } : { ativo: false },
+                    status: temPlano ? 'Pendente de Exclusão' : 'Sem plano ativo (Baixa automática)',
+                    dataEntrega: '', emailHp: '', observacao: obs, pdfUrl: null
+                };
+                
+                salvarNoFirestore(novoItem);
+            });
+
+            mostrarAlerta(`Lote processado! ${state.loteDesligamentos.length} colaboradores verificados.`);
+            state.loteDesligamentos = [];
+            document.getElementById('areaLoteLoaded').classList.add('hidden');
+            document.getElementById('boxLote').classList.remove('border-purple-400', 'bg-purple-50');
+            document.getElementById('boxLote').classList.add('border-gray-300', 'bg-gray-50');
+        };
+
+        window.preencherEBuscar = (cpf, dtResc) => {
+            document.getElementById('cpfBusca').value = cpf;
+            if (dtResc && dtResc.includes('/')) {
+                const [d, m, y] = dtResc.split('/');
+                if (y && m && d) document.getElementById('dataDesligamento').value = `${y}-${m}-${d}`;
+            } else if (dtResc && dtResc.includes('-')) {
+                document.getElementById('dataDesligamento').value = dtResc;
+            }
+            mostrarAlerta("Dados preenchidos na busca! Selecione a Regra ANS e gere o espelho.");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        // ==========================================
+        // RENDERIZAÇÃO DO HISTÓRICO (TABELA)
+        // ==========================================
+        window.atualizarHistoricoInput = (id, campo, valor) => {
+            const item = state.historico.find(i => i.id === id);
+            if (item) {
+                item[campo] = valor;
+                if(campo === 'status') renderHistorico(); // Re-render só se mudar status para abrir campos condicionais
+            }
+        };
+
+        window.salvarLinhaHistorico = (id) => {
+            const item = state.historico.find(i => i.id === id);
+            if(item) {
+                salvarNoFirestore(item);
+                mostrarAlerta('Alterações guardadas com sucesso!');
+            }
+        };
+
+        const renderHistorico = () => {
+            const container = document.getElementById('tabelaHistoricoContainer');
+            const pendencias = state.historico.filter(h => h.status === 'Pendente de Exclusão').length;
+            const badge = document.getElementById('badgePendencias');
+            
+            if (pendencias > 0) {
+                badge.classList.remove('hidden');
+                document.getElementById('qtdPendencias').textContent = pendencias;
+            } else badge.classList.add('hidden');
+
+            if (state.historico.length === 0) {
+                container.innerHTML = `<p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controlo gerado nesta sessão.</p>`;
+                return;
+            }
+
+            let html = `
+                <table class="w-full text-sm text-left text-gray-600">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-3">Data</th>
+                            <th class="px-4 py-3">Colaborador</th>
+                            <th class="px-4 py-3">Rescisão</th>
+                            <th class="px-4 py-3" style="min-width: 400px;">Status, Ações e Observações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const ordenados = [...state.historico].sort((a, b) => {
+                const aSem = a.status === 'Sem plano ativo (Baixa automática)';
+                const bSem = b.status === 'Sem plano ativo (Baixa automática)';
+                if (aSem && !bSem) return 1;
+                if (!aSem && bSem) return -1;
+                return 0;
+            });
+
+            ordenados.forEach(item => {
+                const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : new Date();
+                let temAtraso = false;
+                if (!['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && item.dataRescisao) {
+                    const [d, m, y] = item.dataRescisao.split('/');
+                    if (d && m && y) {
+                        const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
+                        temAtraso = Math.ceil((dataComparacao.getTime() - rDate.getTime()) / (1000 * 60 * 60 * 24)) > 10;
+                    }
+                }
+
+                const planoAtivo = item.status !== 'Sem plano ativo (Baixa automática)';
+                const diasPass = calcularDiasDesdeRescisao(item.dataRescisao);
+                const perdeuPrazo = planoAtivo && diasPass > 30;
+                const semDireito = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa';
+
+                const statusColor = (item.status === 'Exclusão processada' || item.status === 'Sem plano ativo (Baixa automática)') ? 'bg-green-100 text-green-800 border-green-300' :
+                                    (item.status === 'Gerado (Aguardando ação)' || item.status === 'Pendente de Exclusão') ? 'bg-gray-100 text-gray-600 border-gray-300' : 'bg-blue-50 text-blue-800 border-blue-300';
+
+                html += `
+                    <tr class="border-b border-gray-100 hover:bg-gray-50/30">
+                        <td class="px-4 py-4 align-top pt-5">${item.dataGeracao.split(' ')[0]}</td>
+                        <td class="px-4 py-4 align-top pt-5 font-medium text-gray-800">
+                            ${item.nome}
+                            <br/><span class="text-xs text-gray-400 font-normal">CPF: ${item.cpf}</span>
                         </td>
-                        <td className="px-4 py-4 align-top pt-5">
-                          <span className="block">{item.dataRescisao}</span>
-                          <span className="text-[10px] text-gray-400 uppercase tracking-wider">Data Ref.</span>
-                        </td>
-                        <td className="px-4 py-4 align-top">
-                          
-                          <div className="flex gap-2 mb-3">
-                            <select 
-                              value={item.status}
-                              onChange={(e) => atualizarHistorico(item.id, 'status', e.target.value)}
-                              className={`flex-1 p-2 border rounded text-sm outline-none font-medium ${
-                                item.status === 'Exclusão processada' || item.status.includes('concluída') || item.status === 'Sem plano ativo (Baixa automática)' ? 'bg-green-100 text-green-800 border-green-300' :
-                                item.status === 'Gerado (Aguardando ação)' || item.status.includes('Pendente') ? 'bg-gray-100 text-gray-600 border-gray-300' :
-                                'bg-blue-50 text-blue-800 border-blue-300'
-                              }`}
-                            >
-                              <option value={item.tipoMovimento === 'exclusao' ? 'Pendente de Exclusão' : 'Pendente de Lançamento'}>
-                                {item.tipoMovimento === 'exclusao' ? 'Pendente de Exclusão' : 'Pendente de Lançamento'}
-                              </option>
-                              <option value="Gerado (Aguardando ação)">Gerado (Aguardando ação)</option>
-                              <option value="Preenchido e assinado">Preenchido e assinado</option>
-                              <option value="Enviado para o colaborador">Enviado para o colaborador</option>
-                              <option value="Encaminhado para hphealth">Encaminhado para hphealth</option>
-                              <option value={item.tipoMovimento === 'exclusao' ? 'Exclusão processada' : 'Movimentação concluída'}>
-                                {item.tipoMovimento === 'exclusao' ? 'Exclusão processada' : 'Movimentação concluída'}
-                              </option>
-                              <option value="Sem plano ativo (Baixa automática)">Sem plano ativo (Baixa automática)</option>
-                            </select>
+                        <td class="px-4 py-4 align-top pt-5">${item.dataRescisao}</td>
+                        <td class="px-4 py-4 align-top">
+                            <div class="flex gap-2 mb-3">
+                                <select onchange="atualizarHistoricoInput(${item.id}, 'status', this.value); salvarLinhaHistorico(${item.id})" class="flex-1 p-2 border rounded text-sm outline-none font-medium ${statusColor}">
+                                    <option value="Pendente de Exclusão" ${item.status==='Pendente de Exclusão'?'selected':''}>Pendente de Exclusão</option>
+                                    <option value="Gerado (Aguardando ação)" ${item.status==='Gerado (Aguardando ação)'?'selected':''}>Gerado (Aguardando ação)</option>
+                                    <option value="Preenchido e assinado" ${item.status==='Preenchido e assinado'?'selected':''}>Preenchido e assinado</option>
+                                    <option value="Enviado para o colaborador" ${item.status==='Enviado para o colaborador'?'selected':''}>Enviado para o colaborador</option>
+                                    <option value="Encaminhado para hphealth" ${item.status==='Encaminhado para hphealth'?'selected':''}>Encaminhado para hphealth</option>
+                                    <option value="Exclusão processada" ${item.status==='Exclusão processada'?'selected':''}>Exclusão processada</option>
+                                    <option value="Sem plano ativo (Baixa automática)" ${item.status==='Sem plano ativo (Baixa automática)'?'selected':''}>Sem plano ativo (Baixa automática)</option>
+                                </select>
+                                
+                                ${item.status === 'Pendente de Exclusão' && !item.pdfUrl ? `
+                                    <div class="flex flex-col gap-1">
+                                        <div class="flex gap-1">
+                                            <select onchange="atualizarHistoricoInput(${item.id}, 'motivo', this.value)" class="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28">
+                                                <option value="pedido_demissao" ${item.motivo==='pedido_demissao'?'selected':''}>Pedido Dem.</option>
+                                                <option value="sem_justa_causa" ${(!item.motivo || item.motivo==='sem_justa_causa')?'selected':''}>Sem Justa</option>
+                                                <option value="com_justa_causa" ${item.motivo==='com_justa_causa'?'selected':''}>Com Justa</option>
+                                                <option value="aposentadoria" ${item.motivo==='aposentadoria'?'selected':''}>Aposent.</option>
+                                            </select>
+                                            <button onclick="handleGerarPdfDaLinha(${item.id})" class="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded px-3 transition-colors text-xs font-bold gap-1 shadow-sm whitespace-nowrap" title="Gerar Espelho com dados do Lote">
+                                                <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Gerar PDF
+                                            </button>
+                                            <button onclick="preencherEBuscar('${item.cpf}', '${item.dataRescisao}')" class="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded transition-colors text-xs font-bold" title="Avaliar manualmente na Busca">
+                                                <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                            </button>
+                                        </div>
+                                        ${(perdeuPrazo || semDireito) ? `
+                                            <div class="mt-1 space-y-0.5">
+                                                ${perdeuPrazo ? `<div class="text-[11px] text-red-600 font-semibold flex items-center gap-1"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Passou de 30 dias. Exclusão.</div>` : ''}
+                                                ${semDireito ? `<div class="text-[11px] text-red-600 font-semibold flex items-center gap-1"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Motivo sem direito à manutenção.</div>` : ''}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                ` : ''}
 
-                            {(item.status.includes('Pendente')) && !item.pdfUrl && (
-                              <div className="flex flex-col gap-1">
-                                <div className="flex gap-1">
-                                  {item.tipoMovimento === 'exclusao' && (
-                                    <select 
-                                      value={item.motivo || 'sem_justa_causa'}
-                                      onChange={(e) => atualizarHistorico(item.id, 'motivo', e.target.value)}
-                                      className="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28"
-                                      title="Motivo da Rescisão"
-                                    >
-                                      <option value="pedido_demissao">Pedido Dem.</option>
-                                      <option value="sem_justa_causa">Sem Justa</option>
-                                      <option value="com_justa_causa">Com Justa</option>
-                                      <option value="aposentadoria">Aposent.</option>
-                                    </select>
-                                  )}
-                                  <button 
-                                    onClick={() => handleGerarPdfDaLinha(item)}
-                                    disabled={gerandoPdf}
-                                    className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded px-3 transition-colors text-xs font-bold gap-1 shadow-sm whitespace-nowrap"
-                                    title="Gerar Espelho com dados do Lote"
-                                  >
-                                    <FileText size={14} /> Gerar PDF
-                                  </button>
-                                  <button 
-                                    onClick={() => preencherEBuscar(item.cpf, item.dataRescisao)}
-                                    className="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded transition-colors text-xs font-bold"
-                                    title="Avaliar manualmente na Busca"
-                                  >
-                                    <Search size={14} />
-                                  </button>
+                                ${item.pdfUrl ? `
+                                    <a href="${item.pdfUrl}" download="Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf" class="flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white p-2 rounded px-3 transition-colors" title="Baixar PDF do Espelho novamente">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                    </a>
+                                ` : ''}
+                            </div>
+
+                            ${temAtraso ? `
+                                <div class="mb-3 px-2 py-1.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-semibold flex items-center gap-1.5">
+                                    <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i> Atenção: Prazo de entrega (SLA 10 dias) expirado!
+                                </div>
+                            ` : ''}
+
+                            <div class="grid grid-cols-1 gap-3">
+                                ${item.status === 'Enviado para o colaborador' ? `
+                                    <div class="fade-in">
+                                        <label class="text-xs text-gray-500 mb-1 block">Data da Entrega:</label>
+                                        <input type="date" value="${item.dataEntrega||''}" onchange="atualizarHistoricoInput(${item.id}, 'dataEntrega', this.value)" class="w-full p-1.5 border rounded text-sm focus:ring-1 outline-none ${temAtraso && item.dataEntrega ? 'border-red-400 bg-red-50' : 'border-gray-300'}" />
+                                    </div>
+                                ` : ''}
+
+                                ${item.status === 'Encaminhado para hphealth' ? `
+                                    <div class="fade-in">
+                                        <label class="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
+                                        <div class="flex gap-2">
+                                            <input type="email" placeholder="exemplo@hphealth.com.br" value="${item.emailHp||''}" onchange="atualizarHistoricoInput(${item.id}, 'emailHp', this.value)" class="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:ring-1 outline-none" />
+                                            <a href="mailto:${item.emailHp || ''}?subject=Formulário de Exclusão Amil - ${item.nome}&body=Olá,%0D%0A%0D%0ASegue em anexo o formulário de exclusão referente ao colaborador ${item.nome} (CPF: ${item.cpf})." class="p-1.5 rounded flex items-center justify-center transition-colors ${item.emailHp ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'}" title="Abrir Caixa de E-mail">
+                                                <i data-lucide="send" class="w-4 h-4"></i>
+                                            </a>
+                                        </div>
+                                    </div>
+                                ` : ''}
+
+                                <div>
+                                    <textarea placeholder="Adicionar observações..." onchange="atualizarHistoricoInput(${item.id}, 'observacao', this.value)" rows="2" class="w-full p-2 border rounded text-xs outline-none resize-none ${item.status === 'Sem plano ativo (Baixa automática)' ? 'border-green-200 bg-green-50/30 focus:ring-green-400' : 'bg-yellow-50/30 focus:ring-yellow-400 border-gray-200'}">${item.observacao||''}</textarea>
                                 </div>
                                 
-                                {(perdeuPrazo30Dias || semDireitoMotivo) && item.tipoMovimento === 'exclusao' && (
-                                  <div className="mt-1 space-y-0.5">
-                                    {perdeuPrazo30Dias && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Passou de 30 dias. Exclusão.</div>}
-                                    {semDireitoMotivo && <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1"><AlertTriangle size={12}/> Motivo sem direito à manutenção.</div>}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {item.pdfUrl && (
-                              <a 
-                                href={item.pdfUrl}
-                                download={`Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`}
-                                className="flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white p-2 rounded px-3 transition-colors"
-                                title="Baixar PDF do Espelho novamente"
-                              >
-                                <Download size={16} />
-                              </a>
-                            )}
-                          </div>
-
-                          {temAtraso && (
-                            <div className="mb-3 px-2 py-1.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-semibold flex items-center gap-1.5">
-                              <AlertTriangle size={14} /> Atenção: Prazo de entrega (SLA 10 dias) expirado!
+                                <button onclick="salvarLinhaHistorico(${item.id})" class="w-full mt-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-xs font-bold transition-colors border border-gray-300 flex items-center justify-center gap-1.5">
+                                    <i data-lucide="save" class="w-3.5 h-3.5"></i> Salvar Registro
+                                </button>
                             </div>
-                          )}
-
-                          <div className="grid grid-cols-1 gap-3">
-                            {item.status === 'Enviado para o colaborador' && (
-                              <div className="animate-in fade-in slide-in-from-top-1">
-                                <label className="text-xs text-gray-500 mb-1 block">Data da Entrega:</label>
-                                <input 
-                                  type="date" 
-                                  value={item.dataEntrega}
-                                  onChange={(e) => atualizarHistorico(item.id, 'dataEntrega', e.target.value)}
-                                  className={`w-full p-1.5 border rounded text-sm focus:ring-1 outline-none ${temAtraso && item.dataEntrega ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
-                                />
-                              </div>
-                            )}
-
-                            {item.status === 'Encaminhado para hphealth' && (
-                              <div className="animate-in fade-in slide-in-from-top-1">
-                                <label className="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
-                                <div className="flex gap-2">
-                                  <input 
-                                    type="email" 
-                                    placeholder="exemplo@hphealth.com.br"
-                                    value={item.emailHp}
-                                    onChange={(e) => atualizarHistorico(item.id, 'emailHp', e.target.value)}
-                                    className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:ring-1 outline-none"
-                                  />
-                                  <a 
-                                    href={`mailto:${item.emailHp || ''}?subject=Formulário de Exclusão Amil - ${item.nome}&body=Olá,%0D%0A%0D%0ASegue em anexo o formulário de exclusão referente ao colaborador ${item.nome} (CPF: ${item.cpf}).`}
-                                    className={`p-1.5 rounded flex items-center justify-center transition-colors ${item.emailHp ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'}`}
-                                    title="Abrir Caixa de E-mail"
-                                  >
-                                    <Send size={16} />
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-
-                            <div>
-                              <textarea
-                                placeholder="Adicionar observações..."
-                                value={item.observacao}
-                                onChange={(e) => atualizarHistorico(item.id, 'observacao', e.target.value)}
-                                rows={2}
-                                className={`w-full p-2 border bg-yellow-50/30 rounded text-xs focus:ring-1 focus:ring-yellow-400 outline-none resize-none ${item.status === 'Sem plano ativo (Baixa automática)' ? 'border-green-200 bg-green-50/30 focus:ring-green-400' : 'border-gray-200'}`}
-                              />
-                            </div>
-                            
-                            <button 
-                              onClick={salvarAlteracoes}
-                              className="w-full mt-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-1.5 rounded text-xs font-bold transition-colors border border-gray-300 flex items-center justify-center gap-1.5"
-                            >
-                              <Save size={14}/> Salvar Registro
-                            </button>
-
-                            {item.operadorResponsavel && (
-                              <div className="flex items-center justify-end text-[10px] text-gray-400 mt-1 mr-1 gap-1 font-medium" title="Último usuário a modificar ou gerar este registro">
-                                <User size={10} /> Tratado por: {item.operadorResponsavel}
-                              </div>
-                            )}
-
-                          </div>
-
                         </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                    </tr>
+                `;
+            });
 
-      </div>
-    </div>
-  );
-}
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+            lucide.createIcons();
+        };
+
+    </script>
+</body>
+</html>

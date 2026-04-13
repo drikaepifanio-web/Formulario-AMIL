@@ -221,7 +221,7 @@
                         <h4 id="tituloSaude" class="font-bold text-gray-400">Amil Saúde</h4>
                         <label id="lblManterSaude" class="hidden flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" id="chkManterSaude" checked class="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
-                            Incluir no PDF/Planilha
+                            Incluir na Movimentação
                         </label>
                     </div>
                     <div id="conteudoSaude"></div>
@@ -233,7 +233,7 @@
                         <h4 id="tituloDental" class="font-bold text-gray-400">Amil Dental</h4>
                         <label id="lblManterDental" class="hidden flex items-center gap-2 text-sm cursor-pointer">
                             <input type="checkbox" id="chkManterDental" checked class="rounded text-green-600 focus:ring-green-500 w-4 h-4"/>
-                            Incluir no PDF/Planilha
+                            Incluir na Movimentação
                         </label>
                     </div>
                     <div id="conteudoDental"></div>
@@ -242,6 +242,10 @@
 
             <!-- OPÇÕES DE EXPORTAÇÃO DO RESULTADO ATUAL -->
             <div class="flex flex-wrap justify-end pt-6 gap-3">
+                <!-- NOVO BOTÃO: Guardar na Lista (Sem precisar exportar) -->
+                <button onclick="salvarApenas()" class="px-5 py-3 font-bold rounded-lg transition-all shadow flex items-center gap-2 bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300" title="Apenas adicionar à lista de controlo">
+                    <i data-lucide="save" class="w-5 h-5"></i> Guardar na Lista
+                </button>
                 <button onclick="gerarPlanilhaAmil('atual', 'titular')" class="px-5 py-3 font-bold rounded-lg transition-all shadow flex items-center gap-2 bg-teal-600 text-white hover:bg-teal-700 border border-teal-700" title="Gerar Planilha de Titular para este colaborador">
                     <i data-lucide="table" class="w-5 h-5"></i> Planilha (Titular)
                 </button>
@@ -265,7 +269,6 @@
                         <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências Totais: <span id="qtdPendencias">0</span>
                     </div>
 
-                    <!-- NOVO BOTÃO: MODELO AMIL (DROPDOWN) -->
                     <div class="relative group">
                         <button class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap" title="Gerar planilhas no formato exigido pela Amil">
                             <i data-lucide="table" class="w-4 h-4"></i> Modelo Amil <i data-lucide="chevron-down" class="w-3 h-3"></i>
@@ -907,27 +910,72 @@
         };
 
         // ==========================================
+        // LÓGICA CENTRAL DE SALVAMENTO DE REGISTO 
+        // ==========================================
+        window.salvarMovimentacaoAtual = async (acaoExtra = false) => {
+            const res = state.resultado;
+            if (!res) return null;
+
+            const motivo = document.getElementById('motivoRescisao').value;
+            if (res.tipoMovimentacao === 'exclusao_rescisao' && !motivo) { 
+                mostrarAlerta("⚠️ Escolha o motivo da rescisão.", "erro"); return null; 
+            }
+
+            const manterSaude = document.getElementById('chkManterSaude')?.checked ?? false;
+            const manterDental = document.getElementById('chkManterDental')?.checked ?? false;
+
+            const dtFmt = res.dtDesligamento.includes('-') ? res.dtDesligamento.split('-').reverse().join('/') : res.dtDesligamento;
+
+            const idx = state.historico.findIndex(h => h.cpf === res.cpf && h.tipoMovimentacao === res.tipoMovimentacao && !statusConcluidosGeral.includes(h.status));
+
+            let reg;
+            if (idx !== -1) {
+                reg = { ...state.historico[idx] };
+                if (acaoExtra && reg.status === 'Pendente de Exclusão') reg.status = 'Gerado (Aguardando ação)';
+            } else {
+                reg = { 
+                    id: Date.now(), 
+                    dataGeracao: new Date().toLocaleString('pt-PT'), 
+                    tipoMovimentacao: res.tipoMovimentacao,
+                    nome: res.nome, 
+                    cpf: res.cpf, 
+                    dataRescisao: dtFmt, 
+                    admissao: res.admissao,
+                    motivo: motivo || '',
+                    saude: manterSaude ? res.saude : { ativo: false },
+                    dental: manterDental ? res.dental : { ativo: false },
+                    status: (acaoExtra || res.tipoMovimentacao !== 'exclusao_rescisao') ? 'Gerado (Aguardando ação)' : 'Pendente de Exclusão', 
+                    dataEntrega: '', emailHp: '', observacao: '', pdfUrl: null 
+                };
+            }
+
+            if (tiposAdesaoGrp.includes(reg.tipoMovimentacao)) state.abaAtiva = 'adesoes';
+            else if (tiposAlteracaoGrp.includes(reg.tipoMovimentacao)) state.abaAtiva = 'alteracoes';
+            else state.abaAtiva = 'exclusoes';
+
+            await salvarNoFirestore(reg);
+            return reg;
+        };
+
+        window.salvarApenas = async () => {
+            const reg = await salvarMovimentacaoAtual(false);
+            if (reg) {
+                mostrarAlerta("Movimentação adicionada à lista de Controlo!");
+                renderHistorico();
+            }
+        };
+
+        // ==========================================
         // GERAÇÃO PLANILHAS CSV AMIL E PDF ESPELHO
         // ==========================================
-        window.gerarPlanilhaAmil = (idItem, tipoPlanilha) => {
+        window.gerarPlanilhaAmil = async (idItem, tipoPlanilha) => {
             let item;
             if (idItem === 'atual') {
-                item = {
-                    tipoMovimentacao: state.resultado.tipoMovimentacao,
-                    nome: state.resultado.nome,
-                    cpf: state.resultado.cpf,
-                    dataRescisao: state.resultado.dtDesligamento,
-                    admissao: state.resultado.admissao,
-                    saude: state.resultado.saude,
-                    dental: state.resultado.dental
-                };
-                if (item.dataRescisao && item.dataRescisao.includes('-')) {
-                    item.dataRescisao = item.dataRescisao.split('-').reverse().join('/');
-                }
+                item = await salvarMovimentacaoAtual(true);
+                if (!item) return;
             } else {
                 item = state.historico.find(i => i.id === idItem);
             }
-
             if (!item) return;
 
             let movString = "Inclusão";
@@ -960,11 +1008,10 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            if(idItem === 'atual') mostrarAlerta("Planilha gerada com sucesso!");
+            if(idItem === 'atual') mostrarAlerta("Planilha gerada e registo guardado no histórico!");
         };
 
         window.gerarLoteAmil = (tipoPlanilha) => {
-            // Filtra os itens exatamente como estão visíveis na Aba e na Busca atual
             let filtrados = state.historico.filter(h => {
                 const isConcluido = statusConcluidosGeral.includes(h.status);
                 const tipo = h.tipoMovimentacao || 'exclusao_rescisao';
@@ -1119,57 +1166,30 @@
         };
 
         window.handleGerarPDF = async () => {
-            const motivo = document.getElementById('motivoRescisao').value;
-            if (state.resultado.tipoMovimentacao === 'exclusao_rescisao' && !motivo) { 
-                mostrarAlerta("⚠️ Escolha o motivo da rescisão.", "erro"); return; 
-            }
-            
             const btn = document.getElementById('btnGerarPdf');
-            btn.textContent = 'A processar Documento...'; btn.classList.add('opacity-50');
+            btn.textContent = 'A processar...'; btn.classList.add('opacity-50');
 
             try {
-                const manterSaude = document.getElementById('chkManterSaude')?.checked ?? false;
-                const manterDental = document.getElementById('chkManterDental')?.checked ?? false;
-                
+                const reg = await salvarMovimentacaoAtual(true);
+                if (!reg) return;
+
                 const dataUri = await construtorDePdf({
-                    nome: state.resultado.nome, cpf: state.resultado.cpf, admissao: state.resultado.admissao,
-                    dataRescisao: state.resultado.dtDesligamento, motivo: motivo,
-                    saude: manterSaude ? state.resultado.saude : { ativo: false },
-                    dental: manterDental ? state.resultado.dental : { ativo: false },
-                    tipoMovimentacao: state.resultado.tipoMovimentacao
+                    nome: reg.nome, cpf: reg.cpf, admissao: reg.admissao,
+                    dataRescisao: reg.dataRescisao, motivo: reg.motivo,
+                    saude: reg.saude, dental: reg.dental,
+                    tipoMovimentacao: reg.tipoMovimentacao
                 });
 
                 const a = document.createElement('a'); a.href = dataUri;
-                const prefixoArquivo = state.resultado.tipoMovimentacao.toUpperCase();
-                a.download = `Espelho_${prefixoArquivo}_Amil_${state.resultado.nome.replace(/\s+/g, '_')}.pdf`;
+                const prefixoArquivo = reg.tipoMovimentacao.toUpperCase();
+                a.download = `Espelho_${prefixoArquivo}_Amil_${reg.nome.replace(/\s+/g, '_')}.pdf`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
-                mostrarAlerta(`Espelho gerado com sucesso!`);
-                
-                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.tipoMovimentacao === state.resultado.tipoMovimentacao && !statusConcluidosGeral.includes(h.status));
-                const dtFmt = state.resultado.dtDesligamento.includes('-') ? state.resultado.dtDesligamento.split('-').reverse().join('/') : state.resultado.dtDesligamento;
-                
-                let novoReg;
-                if (idx !== -1) {
-                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', pdfUrl: dataUri, observacao: state.historico[idx].observacao || 'Espelho documental gerado.' };
-                } else {
-                    novoReg = { 
-                        id: Date.now(), 
-                        dataGeracao: new Date().toLocaleString('pt-PT'), 
-                        tipoMovimentacao: state.resultado.tipoMovimentacao,
-                        nome: state.resultado.nome, 
-                        cpf: state.resultado.cpf, 
-                        dataRescisao: dtFmt, 
-                        status: 'Gerado (Aguardando ação)', 
-                        dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri 
-                    };
-                }
-                
-                if (tiposAdesaoGrp.includes(novoReg.tipoMovimentacao)) state.abaAtiva = 'adesoes';
-                else if (tiposAlteracaoGrp.includes(novoReg.tipoMovimentacao)) state.abaAtiva = 'alteracoes';
-                else state.abaAtiva = 'exclusoes';
+                reg.pdfUrl = dataUri;
+                if(!reg.observacao) reg.observacao = 'Espelho documental gerado.';
+                await salvarNoFirestore(reg);
 
-                salvarNoFirestore(novoReg);
+                mostrarAlerta(`Espelho gerado e registo guardado no histórico!`);
             } catch (err) {
                 console.error(err); mostrarAlerta("Erro ao gerar PDF.", "erro");
             } finally {

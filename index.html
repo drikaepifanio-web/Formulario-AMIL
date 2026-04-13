@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exclusões AMIL</title>
+    <title>Movimentações AMIL</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -49,10 +49,10 @@
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-bold text-blue-900 flex items-center gap-2">
-                    <i data-lucide="file-text" class="text-blue-600"></i> Exclusões AMIL
+                    <i data-lucide="file-text" class="text-blue-600"></i> Gestão de Movimentações AMIL
                 </h1>
                 <p class="text-gray-500 text-sm mt-1 flex items-center gap-2">
-                    Geração de relatórios com cálculos exatos de permanência
+                    Central de Adesões, Upgrades, Downgrades e Exclusões
                     <span id="statusNuvem" class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded flex items-center gap-1"><i data-lucide="cloud" class="w-3 h-3"></i> A Ligar...</span>
                 </p>
             </div>
@@ -124,11 +124,11 @@
                     <div id="boxLote" class="p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
                         <label class="block text-sm font-bold text-purple-800 mb-2 flex items-center gap-1"><i data-lucide="list-checks" class="w-4 h-4"></i> Lote de Desligamentos</label>
                         <input type="file" id="fileLote" accept=".csv" class="text-xs w-full" />
-                        <p class="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática.</p>
+                        <p class="text-[10px] text-gray-500 mt-1">Carregue a lista semanal para triagem automática (Exclusões).</p>
                     </div>
                 </div>
 
-                <!-- NOVO: HISTÓRICO DE BASES INSERIDAS -->
+                <!-- HISTÓRICO DE BASES INSERIDAS -->
                 <div class="mt-6 border-t border-gray-100 pt-4 fade-in">
                     <h3 class="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1"><i data-lucide="history" class="w-4 h-4"></i> Histórico de Ficheiros Carregados (Últimos 30)</h3>
                     <div id="listaHistoricoBases" class="bg-gray-50 border border-gray-200 rounded-lg max-h-40 overflow-y-auto p-1 text-xs text-gray-600 shadow-inner">
@@ -141,20 +141,32 @@
         <!-- ÁREA DE OPERAÇÃO E CÁLCULO -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <i data-lucide="search" class="text-gray-400 w-5 h-5"></i> 2. Procurar e Calcular
+                <i data-lucide="search" class="text-gray-400 w-5 h-5"></i> 2. Nova Movimentação
             </h2>
             
-            <div class="flex flex-col md:flex-row gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
-                <div class="flex-1 w-full">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">CPF do Colaborador</label>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                <div class="w-full">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Movimentação</label>
+                    <select id="tipoMovimentacaoBusca" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-indigo-900 bg-white">
+                        <option value="exclusao_rescisao">Exclusão (Desligamento)</option>
+                        <option value="adesao">Adesão (Novo)</option>
+                        <option value="inclusao_dep">Inclusão de Dependente</option>
+                        <option value="exclusao_dep">Exclusão de Dependente</option>
+                        <option value="exclusao_desistencia">Exclusão por Desistência</option>
+                        <option value="upgrade">Upgrade de Plano</option>
+                        <option value="downgrade">Downgrade de Plano</option>
+                    </select>
+                </div>
+                <div class="w-full">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">CPF do Titular</label>
                     <input type="text" id="cpfBusca" placeholder="Ex: 55566677788" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <div class="flex-1 w-full">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Data da Rescisão</label>
+                <div class="w-full">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Data do Evento</label>
                     <input type="date" id="dataDesligamento" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <button onclick="handleBuscar()" class="w-full md:w-auto px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm whitespace-nowrap">
-                    Processar Dados
+                <button onclick="handleBuscar()" class="w-full px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm whitespace-nowrap">
+                    Processar
                 </button>
             </div>
             
@@ -165,7 +177,7 @@
             <!-- ÁREA DE LOTE CARREGADO -->
             <div id="areaLoteLoaded" class="hidden mt-4 pt-4 border-t border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-purple-50 p-4 rounded-lg border border-purple-100 gap-4 fade-in">
                 <div>
-                    <h3 class="font-semibold text-purple-800 flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4"></i> Processamento Automático (Triagem)</h3>
+                    <h3 class="font-semibold text-purple-800 flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4"></i> Processamento Automático (Triagem de Exclusões)</h3>
                     <p class="text-sm text-purple-600 mt-1">Encontrados <strong id="qtdLote">0</strong> colaboradores na planilha.</p>
                 </div>
                 <button onclick="handleProcessarLote()" class="px-6 py-2 bg-purple-600 text-white font-medium rounded-md hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full sm:w-auto">
@@ -178,10 +190,14 @@
         <div id="areaResultado" class="hidden bg-white p-6 rounded-xl shadow-sm border border-gray-200 fade-in">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-gray-200 pb-4 mb-4">
                 <div>
-                    <h3 id="resNome" class="text-xl font-bold text-gray-800"></h3>
-                    <p id="resInfo" class="text-sm text-gray-500"></p>
+                    <div class="flex items-center gap-3">
+                        <h3 id="resNome" class="text-xl font-bold text-gray-800"></h3>
+                        <span id="badgeTipoMov" class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded font-bold uppercase border border-indigo-200"></span>
+                    </div>
+                    <p id="resInfo" class="text-sm text-gray-500 mt-1"></p>
                 </div>
-                <div class="mt-4 md:mt-0 w-full md:w-auto">
+                
+                <div id="containerMotivoRescisao" class="mt-4 md:mt-0 w-full md:w-auto">
                     <select id="motivoRescisao" onchange="atualizarEstiloMotivo()" class="w-full p-2 border rounded-md focus:ring-2 outline-none text-sm font-medium border-orange-300 bg-orange-50 text-orange-800">
                         <option value="">⚠️ Obrigatório: Regra ANS...</option>
                         <option value="pedido_demissao">Pedido de demissão</option>
@@ -231,12 +247,15 @@
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <i data-lucide="clock" class="text-blue-600 w-5 h-5"></i> 3. Controlo de Movimentações Amil
+                    <i data-lucide="clock" class="text-blue-600 w-5 h-5"></i> 3. Controlo de Movimentações
                 </h2>
                 <div class="flex flex-wrap items-center gap-2">
                     <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
                         <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
                     </div>
+                    <button onclick="enviarEmailPendentes()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap" title="Enviar resumo de pendentes por e-mail">
+                        <i data-lucide="mail" class="w-4 h-4"></i> Enviar Pendentes
+                    </button>
                     <button onclick="gerarRelatorioCSV()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap" title="Exportar para Excel">
                         <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Relatório Excel
                     </button>
@@ -298,7 +317,7 @@
         import { getFirestore, collection, onSnapshot, doc, setDoc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
-        // ESTADO GLOBAL DA APLICAÇÃO
+        // CONFIGURAÇÕES GERAIS E ESTADOS
         // ==========================================
         const state = {
             baseSistema: [], faturaSaude: [], faturaDental: [], loteDesligamentos: [],
@@ -306,8 +325,18 @@
             pdfOficialUrl: null, pdfOficialNome: '',
             appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
             abaAtiva: 'pendentes',
-            termoBusca: '', // NOVO: Controle da pesquisa rápida
-            historicoBases: [] // NOVO: Histórico de ficheiros carregados
+            termoBusca: '',
+            historicoBases: []
+        };
+
+        const tiposMovimentacaoMap = {
+            'exclusao_rescisao': 'Exclusão (Desligamento)',
+            'adesao': 'Adesão (Novo)',
+            'inclusao_dep': 'Inclusão de Dependente',
+            'exclusao_dep': 'Exclusão de Dependente',
+            'exclusao_desistencia': 'Exclusão (Desistência)',
+            'upgrade': 'Upgrade de Plano',
+            'downgrade': 'Downgrade de Plano'
         };
 
         // Inicializar ícones
@@ -439,14 +468,11 @@
             const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
             const mesAno = `${meses[data.getMonth()]} de ${data.getFullYear()}`;
             
-            // Verifica no armazenamento do navegador se a pessoa já deu "Ciente" neste mês
             const lembreteSalvo = localStorage.getItem('amil_arquivos_atualizados_mes');
-            
             if (lembreteSalvo !== mesAno) {
                 document.getElementById('mesAtualLembrete').textContent = mesAno;
                 document.getElementById('lembreteMensal').classList.remove('hidden');
                 
-                // Abre a aba de arquivos automaticamente para a pessoa ver o lembrete
                 const area = document.getElementById('areaAbastecimento');
                 const icone = document.getElementById('iconeAbastecimentoToggle');
                 area.classList.remove('hidden');
@@ -464,7 +490,6 @@
             mostrarAlerta("Ótimo! Pode processar as suas exclusões.");
         };
 
-        // Chama a verificação assim que a página carrega
         setTimeout(verificarLembreteMensal, 500);
 
         // ==========================================
@@ -499,7 +524,7 @@
                     state.pdfOficialNome = file.name;
                     atualizarBotoesPdfOficial();
                     mostrarAlerta('Formulário anexado e guardado na nuvem!');
-                    registrarUploadBase('formularioPdf', file.name); // Regista o upload do formulário
+                    registrarUploadBase('formularioPdf', file.name); 
                     if (state.user && state.db) {
                         try {
                             const ref = doc(state.db, 'artifacts', state.appId, 'public', 'data', 'configAmil', 'geral');
@@ -513,7 +538,6 @@
             }
         });
 
-        // NOVO: Registar histórico de ficheiros carregados
         window.registrarUploadBase = async (tipo, nomeArquivo) => {
             if (!state.user || !state.db) return;
             const tiposMap = {
@@ -530,7 +554,6 @@
                 dataUpload: new Date().toLocaleString('pt-PT')
             };
             
-            // Mantém apenas os últimos 30 registos para não pesar
             const novosLogs = [novoLog, ...state.historicoBases].slice(0, 30);
             state.historicoBases = novosLogs;
             renderHistoricoBases();
@@ -586,9 +609,8 @@
                 });
 
                 state[tipo] = dados;
-                registrarUploadBase(tipo, arquivo.name); // Regista no histórico
+                registrarUploadBase(tipo, arquivo.name);
                 
-                // Estilo visual de ficheiro carregado
                 let boxId = tipo === 'baseSistema' ? 'boxBase' : tipo === 'faturaSaude' ? 'boxSaude' : tipo === 'faturaDental' ? 'boxDental' : 'boxLote';
                 const box = document.getElementById(boxId);
                 box.classList.remove('border-gray-300', 'bg-gray-50');
@@ -609,7 +631,7 @@
         document.getElementById('fileLote').addEventListener('change', e => processarCSV(e.target.files[0], 'loteDesligamentos'));
 
         // ==========================================
-        // MOTOR DE BUSCA
+        // MOTOR DE BUSCA E LÓGICA DE DATAS
         // ==========================================
         const limparDoc = doc => doc ? doc.toString().replace(/\D/g, '') : '';
         const encontrarValor = (obj, palavras) => {
@@ -667,7 +689,7 @@
             const fim = conv(dataFim);
 
             if (isNaN(ini) || isNaN(fim)) return { texto: "Data não identificada", anos: 0, meses: 0, dias: 0 };
-            if (fim < ini) return { texto: "Desligamento anterior ao início", anos: 0, meses: 0, dias: 0 };
+            if (fim < ini) return { texto: "Evento anterior ao início", anos: 0, meses: 0, dias: 0 };
 
             let anos = fim.getFullYear() - ini.getFullYear();
             let meses = fim.getMonth() - ini.getMonth();
@@ -678,7 +700,7 @@
             return { texto: `${anos} anos, ${meses} meses e ${dias} dias`, anos, meses, dias };
         };
 
-        const calcularDiasDesdeRescisao = (dataStr) => {
+        const calcularDiasDesdeEvento = (dataStr) => {
             if (!dataStr) return 0;
             let d, m, y;
             if (dataStr.includes('/')) { [d, m, y] = dataStr.split('/'); } 
@@ -688,8 +710,8 @@
                 else { d = parts[0]; m = parts[1]; y = parts[2]; }
             } else return 0;
             
-            const dataR = new Date(`${y}-${m}-${d}T00:00:00`);
-            return Math.floor((new Date().getTime() - dataR.getTime()) / (1000 * 60 * 60 * 24));
+            const dataE = new Date(`${y}-${m}-${d}T00:00:00`);
+            return Math.floor((new Date().getTime() - dataE.getTime()) / (1000 * 60 * 60 * 24));
         };
 
         window.atualizarEstiloMotivo = () => {
@@ -707,15 +729,16 @@
             errEl.classList.add('hidden');
             document.getElementById('areaResultado').classList.add('hidden');
 
+            const tipoMovimentacao = document.getElementById('tipoMovimentacaoBusca').value;
             const cpf = limparDoc(document.getElementById('cpfBusca').value);
             const dtDesligamento = document.getElementById('dataDesligamento').value;
 
             if (!cpf || !dtDesligamento) {
-                document.getElementById('erroPesquisaMsg').textContent = 'Preencha o CPF e a Data de Rescisão.';
+                document.getElementById('erroPesquisaMsg').textContent = 'Preencha o CPF e a Data do Evento.';
                 errEl.classList.remove('hidden'); return;
             }
-            if (state.faturaSaude.length === 0 && state.faturaDental.length === 0) {
-                document.getElementById('erroPesquisaMsg').textContent = 'As faturas de Saúde e/ou Dental precisam estar carregadas.';
+            if (state.faturaSaude.length === 0 && state.faturaDental.length === 0 && tipoMovimentacao !== 'adesao') {
+                document.getElementById('erroPesquisaMsg').textContent = 'As faturas precisam estar carregadas (exceto para novas Adesões não faturadas).';
                 errEl.classList.remove('hidden'); return;
             }
 
@@ -723,17 +746,18 @@
             const saude = state.faturaSaude.find(f => limparDoc(extrairCpf(f)) === cpf);
             const dental = state.faturaDental.find(f => limparDoc(extrairCpf(f)) === cpf);
 
-            if (!cad && !saude && !dental) {
+            if (!cad && !saude && !dental && tipoMovimentacao !== 'adesao') {
                 document.getElementById('erroPesquisaMsg').textContent = 'Colaborador não encontrado.';
                 errEl.classList.remove('hidden'); return;
             }
 
-            const nome = extrairNome(cad) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
+            const nome = extrairNome(cad) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado (Preenchimento Manual)';
             const adm = formatarData(extrairAdmissao(cad)) || 'Não informado na Base';
             const iniSaude = extrairDataInicio(saude);
             const iniDental = extrairDataInicio(dental);
 
             state.resultado = {
+                tipoMovimentacao,
                 nome, admissao: adm, dtDesligamento, cpf,
                 saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude)||saude.carteirinha, inicioPlano: iniSaude, tempo: calcularTempo(iniSaude, dtDesligamento) } : { ativo: false },
                 dental: dental ? { ativo: true, carteirinha: extrairCarteirinha(dental)||dental.carteirinha, inicioPlano: iniDental, tempo: calcularTempo(iniDental, dtDesligamento) } : { ativo: false }
@@ -743,16 +767,22 @@
         };
 
         const renderAvisosRegras = () => {
-            const dias = calcularDiasDesdeRescisao(state.resultado.dtDesligamento);
+            const res = state.resultado;
+            if (!res) return;
+            
+            const dias = calcularDiasDesdeEvento(res.dtDesligamento);
             const motivo = document.getElementById('motivoRescisao').value;
             const ct = document.getElementById('avisosRegras');
             ct.innerHTML = '';
 
-            if (dias > 30) {
-                ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> Já se passaram <strong>${dias} dias</strong> da rescisão. O prazo máximo expirou. <u>Exclusão obrigatória</u>.</div></div>`;
-            }
-            if (motivo && motivo !== 'sem_justa_causa') {
-                ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> O direito de manutenção aplica-se apenas a "Sem Justa Causa". <u>Exclusão obrigatória</u>.</div></div>`;
+            // Regras ANS de 30 dias só se aplicam para Exclusões por Rescisão/Desistência
+            if (res.tipoMovimentacao === 'exclusao_rescisao' || res.tipoMovimentacao === 'exclusao_desistencia') {
+                if (dias > 30) {
+                    ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> Já se passaram <strong>${dias} dias</strong> do evento. O prazo máximo expirou. <u>Exclusão obrigatória (Perda de direito)</u>.</div></div>`;
+                }
+                if (res.tipoMovimentacao === 'exclusao_rescisao' && motivo && motivo !== 'sem_justa_causa') {
+                    ct.innerHTML += `<div class="p-3 bg-red-50 text-red-700 rounded-md flex items-center gap-2 text-sm border border-red-200 shadow-sm fade-in"><i data-lucide="alert-triangle" class="shrink-0 w-5 h-5"></i><div><strong>Atenção:</strong> O direito de manutenção aplica-se apenas a "Sem Justa Causa". <u>Exclusão obrigatória</u>.</div></div>`;
+                }
             }
             lucide.createIcons();
         };
@@ -763,9 +793,18 @@
 
             document.getElementById('areaResultado').classList.remove('hidden');
             document.getElementById('resNome').textContent = res.nome;
-            document.getElementById('resInfo').textContent = `CPF: ${res.cpf} • Demissão: ${res.dtDesligamento.split('-').reverse().join('/')}`;
-            document.getElementById('motivoRescisao').value = "";
-            atualizarEstiloMotivo();
+            document.getElementById('badgeTipoMov').textContent = tiposMovimentacaoMap[res.tipoMovimentacao];
+            document.getElementById('resInfo').textContent = `CPF: ${res.cpf} • Data do Evento: ${res.dtDesligamento.split('-').reverse().join('/')}`;
+            
+            const divMotivo = document.getElementById('containerMotivoRescisao');
+            if (res.tipoMovimentacao === 'exclusao_rescisao') {
+                divMotivo.classList.remove('hidden');
+                document.getElementById('motivoRescisao').value = "";
+                atualizarEstiloMotivo();
+            } else {
+                divMotivo.classList.add('hidden');
+                document.getElementById('avisosRegras').innerHTML = ''; // Limpa os avisos da ANS se não for rescisão
+            }
 
             // Saúde
             const cSaude = document.getElementById('cardSaude');
@@ -773,18 +812,23 @@
             const contSaude = document.getElementById('conteudoSaude');
             const lblManterSaude = document.getElementById('lblManterSaude');
             
-            if (res.saude.ativo) {
+            if (res.saude.ativo || res.tipoMovimentacao === 'adesao') {
                 cSaude.className = "p-4 rounded-xl border-2 border-green-500 bg-white";
                 titSaude.className = "font-bold text-green-700";
                 lblManterSaude.classList.remove('hidden');
                 document.getElementById('chkManterSaude').checked = true;
-                contSaude.innerHTML = `
-                    <div class="space-y-1 text-sm text-gray-700">
-                        <p><span class="text-gray-500">Carteirinha:</span> ${res.saude.carteirinha}</p>
-                        <p><span class="text-gray-500">Início:</span> ${res.saude.inicioPlano || 'Não localizado'}</p>
-                        <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
-                        <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.saude.tempo?.texto}</p>
-                    </div>`;
+                
+                if(res.tipoMovimentacao === 'adesao' && !res.saude.ativo) {
+                    contSaude.innerHTML = `<p class="text-sm text-gray-700 italic">Prestes a aderir. Não faturado ainda.</p>`;
+                } else {
+                    contSaude.innerHTML = `
+                        <div class="space-y-1 text-sm text-gray-700">
+                            <p><span class="text-gray-500">Carteirinha:</span> ${res.saude.carteirinha}</p>
+                            <p><span class="text-gray-500">Início:</span> ${res.saude.inicioPlano || 'Não localizado'}</p>
+                            <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
+                            <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.saude.tempo?.texto}</p>
+                        </div>`;
+                }
             } else {
                 cSaude.className = "p-4 rounded-xl border-2 border-gray-200 bg-gray-50";
                 titSaude.className = "font-bold text-gray-400";
@@ -798,31 +842,38 @@
             const contDental = document.getElementById('conteudoDental');
             const lblManterDental = document.getElementById('lblManterDental');
             
-            if (res.dental.ativo) {
+            if (res.dental.ativo || res.tipoMovimentacao === 'adesao') {
                 cDental.className = "p-4 rounded-xl border-2 border-green-500 bg-white";
                 titDental.className = "font-bold text-green-700";
                 lblManterDental.classList.remove('hidden');
                 document.getElementById('chkManterDental').checked = true;
-                contDental.innerHTML = `
-                    <div class="space-y-1 text-sm text-gray-700">
-                        <p><span class="text-gray-500">Carteirinha:</span> ${res.dental.carteirinha}</p>
-                        <p><span class="text-gray-500">Início:</span> ${res.dental.inicioPlano || 'Não localizado'}</p>
-                        <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
-                        <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.dental.tempo?.texto}</p>
-                    </div>`;
+
+                if(res.tipoMovimentacao === 'adesao' && !res.dental.ativo) {
+                    contDental.innerHTML = `<p class="text-sm text-gray-700 italic">Prestes a aderir. Não faturado ainda.</p>`;
+                } else {
+                    contDental.innerHTML = `
+                        <div class="space-y-1 text-sm text-gray-700">
+                            <p><span class="text-gray-500">Carteirinha:</span> ${res.dental.carteirinha}</p>
+                            <p><span class="text-gray-500">Início:</span> ${res.dental.inicioPlano || 'Não localizado'}</p>
+                            <p><span class="text-gray-500">Tempo de Contribuição:</span></p>
+                            <p class="font-semibold bg-green-50 inline-block px-2 py-1 rounded text-green-800 border border-green-100">${res.dental.tempo?.texto}</p>
+                        </div>`;
+                }
             } else {
                 cDental.className = "p-4 rounded-xl border-2 border-gray-200 bg-gray-50";
                 titDental.className = "font-bold text-gray-400";
                 lblManterDental.classList.add('hidden');
                 contDental.innerHTML = `<p class="text-sm text-gray-400 italic">Não possui plano dental ativo.</p>`;
             }
+
+            renderAvisosRegras();
         };
 
         // ==========================================
-        // GERAÇÃO DE PDF
+        // GERAÇÃO DE PDF ESPELHO
         // ==========================================
         const construtorDePdf = async (dadosPdf) => {
-            const { nome, cpf, admissao, dataRescisao, motivo, saude, dental } = dadosPdf;
+            const { nome, cpf, admissao, dataRescisao, motivo, saude, dental, tipoMovimentacao } = dadosPdf;
             const { PDFDocument, rgb, StandardFonts } = window.PDFLib;
             const pdfDoc = await PDFDocument.create();
             const page = pdfDoc.addPage([595.28, 841.89]);
@@ -842,41 +893,67 @@
                 yOffset -= 22;
             };
 
-            escrever('ESPELHO DE DADOS - FORMULÁRIO AMIL (RN 488/22)', 16, true, rgb(0,0.2,0.6));
+            const tipoTitulosPDF = {
+                'exclusao_rescisao': 'ESPELHO DE DADOS - EXCLUSÃO POR DESLIGAMENTO (RN 488/22)',
+                'adesao': 'ESPELHO DE DADOS - ADESÃO DE COLABORADOR',
+                'inclusao_dep': 'ESPELHO DE DADOS - INCLUSÃO DE DEPENDENTE',
+                'exclusao_dep': 'ESPELHO DE DADOS - EXCLUSÃO DE DEPENDENTE',
+                'exclusao_desistencia': 'ESPELHO DE DADOS - EXCLUSÃO POR DESISTÊNCIA',
+                'upgrade': 'ESPELHO DE DADOS - UPGRADE DE PLANO',
+                'downgrade': 'ESPELHO DE DADOS - DOWNGRADE DE PLANO'
+            };
+
+            const titulo = tipoTitulosPDF[tipoMovimentacao] || 'ESPELHO DE DADOS - MOVIMENTAÇÃO AMIL';
+
+            escrever(titulo, 16, true, rgb(0,0.2,0.6));
             escrever('Utilize estes dados precisos para preenchimento do formulário oficial.', 10, false, rgb(0.5,0.5,0.5));
             yOffset -= 20;
 
-            escrever('DADOS DO COLABORADOR', 14, true, rgb(0,0,0)); yOffset -= 5;
+            escrever('DADOS DO TITULAR / COLABORADOR', 14, true, rgb(0,0,0)); yOffset -= 5;
             escreverLinha('Nome Completo:', nome);
             escreverLinha('CPF:', cpf);
             escreverLinha('Data de Admissão:', admissao);
-            escreverLinha('Data de Rescisão:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
+            escreverLinha('Data do Evento:', dataRescisao.includes('-') ? dataRescisao.split('-').reverse().join('/') : dataRescisao);
             
-            const motivosMap = {
-                'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
-                'sem_justa_causa': 'Demissão/exoneração sem justa causa',
-                'com_justa_causa': 'Demissão por justa causa',
-                'aposentadoria': 'Aposentadoria'
-            };
-            escreverLinha('Motivo da Rescisão:', motivosMap[motivo] || motivosMap['sem_justa_causa']);
+            if (tipoMovimentacao === 'exclusao_rescisao') {
+                const motivosMap = {
+                    'pedido_demissao': 'Pedido de demissão (empregado) ou exoneração',
+                    'sem_justa_causa': 'Demissão/exoneração sem justa causa',
+                    'com_justa_causa': 'Demissão por justa causa',
+                    'aposentadoria': 'Aposentadoria'
+                };
+                escreverLinha('Motivo da Rescisão:', motivosMap[motivo] || motivosMap['sem_justa_causa']);
+            }
             yOffset -= 20;
 
             escrever('PLANO AMIL SAÚDE', 14, true, rgb(0,0,0)); yOffset -= 5;
             if (saude && saude.ativo) {
-                escreverLinha('Carteirinha:', saude.carteirinha);
-                escreverLinha('Data de Início no Plano:', saude.inicioPlano);
-                escreverLinha('Tempo de Contribuição:', saude.tempo?.texto);
-                escreverLinha('Fracionado:', `${saude.tempo?.anos} Anos | ${saude.tempo?.meses} Meses | ${saude.tempo?.dias} Dias`);
-            } else escrever('Não possui plano de saúde ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+                if(saude.carteirinha) escreverLinha('Carteirinha:', saude.carteirinha);
+                if(saude.inicioPlano) escreverLinha('Data de Início no Plano:', saude.inicioPlano);
+                if(saude.tempo) {
+                    escreverLinha('Tempo de Contribuição:', saude.tempo?.texto);
+                    escreverLinha('Fracionado:', `${saude.tempo?.anos} Anos | ${saude.tempo?.meses} Meses | ${saude.tempo?.dias} Dias`);
+                }
+            } else if (tipoMovimentacao === 'adesao') {
+                escrever('Adesão Solicitada.', 11, false, rgb(0.1, 0.6, 0.1));
+            } else {
+                escrever('Não possui plano de saúde ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+            }
             yOffset -= 20;
 
             escrever('PLANO AMIL DENTAL', 14, true, rgb(0,0,0)); yOffset -= 5;
             if (dental && dental.ativo) {
-                escreverLinha('Carteirinha:', dental.carteirinha);
-                escreverLinha('Data de Início no Plano:', dental.inicioPlano);
-                escreverLinha('Tempo de Contribuição:', dental.tempo?.texto);
-                escreverLinha('Fracionado:', `${dental.tempo?.anos} Anos | ${dental.tempo?.meses} Meses | ${dental.tempo?.dias} Dias`);
-            } else escrever('Não possui plano dental ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+                if(dental.carteirinha) escreverLinha('Carteirinha:', dental.carteirinha);
+                if(dental.inicioPlano) escreverLinha('Data de Início no Plano:', dental.inicioPlano);
+                if(dental.tempo) {
+                    escreverLinha('Tempo de Contribuição:', dental.tempo?.texto);
+                    escreverLinha('Fracionado:', `${dental.tempo?.anos} Anos | ${dental.tempo?.meses} Meses | ${dental.tempo?.dias} Dias`);
+                }
+            } else if (tipoMovimentacao === 'adesao') {
+                escrever('Adesão Solicitada.', 11, false, rgb(0.1, 0.6, 0.1));
+            } else {
+                escrever('Não possui plano dental ativo ou não selecionado.', 11, false, rgb(0.5,0.5,0.5));
+            }
 
             yOffset = 50;
             escrever('Gerado eletronicamente em: ' + new Date().toLocaleString('pt-PT'), 9, false, rgb(0.6,0.6,0.6));
@@ -886,7 +963,9 @@
 
         window.handleGerarPDF = async () => {
             const motivo = document.getElementById('motivoRescisao').value;
-            if (!motivo) { mostrarAlerta("⚠️ Escolha o motivo da rescisão.", "erro"); return; }
+            if (state.resultado.tipoMovimentacao === 'exclusao_rescisao' && !motivo) { 
+                mostrarAlerta("⚠️ Escolha o motivo da rescisão.", "erro"); return; 
+            }
             
             const btn = document.getElementById('btnGerarPdf');
             btn.textContent = 'A processar Documento...'; btn.classList.add('opacity-50');
@@ -899,23 +978,35 @@
                     nome: state.resultado.nome, cpf: state.resultado.cpf, admissao: state.resultado.admissao,
                     dataRescisao: state.resultado.dtDesligamento, motivo: motivo,
                     saude: manterSaude ? state.resultado.saude : { ativo: false },
-                    dental: manterDental ? state.resultado.dental : { ativo: false }
+                    dental: manterDental ? state.resultado.dental : { ativo: false },
+                    tipoMovimentacao: state.resultado.tipoMovimentacao
                 });
 
                 const a = document.createElement('a'); a.href = dataUri;
-                a.download = `Espelho_Amil_${state.resultado.nome.replace(/\s+/g, '_')}.pdf`;
+                const prefixoArquivo = state.resultado.tipoMovimentacao.toUpperCase();
+                a.download = `Espelho_${prefixoArquivo}_Amil_${state.resultado.nome.replace(/\s+/g, '_')}.pdf`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
                 mostrarAlerta(`Espelho gerado com sucesso!`);
                 
-                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf);
+                // Busca se já existe um registro idêntico (mesmo CPF e mesmo Tipo de Movimentação pendente)
+                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.tipoMovimentacao === state.resultado.tipoMovimentacao && !['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(h.status));
                 const dtFmt = state.resultado.dtDesligamento.includes('-') ? state.resultado.dtDesligamento.split('-').reverse().join('/') : state.resultado.dtDesligamento;
                 
                 let novoReg;
                 if (idx !== -1) {
-                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', pdfUrl: dataUri, observacao: state.historico[idx].observacao || 'Espelho de exclusão gerado.' };
+                    novoReg = { ...state.historico[idx], status: 'Gerado (Aguardando ação)', pdfUrl: dataUri, observacao: state.historico[idx].observacao || 'Espelho documental gerado.' };
                 } else {
-                    novoReg = { id: Date.now(), dataGeracao: new Date().toLocaleString('pt-PT'), nome: state.resultado.nome, cpf: state.resultado.cpf, dataRescisao: dtFmt, status: 'Gerado (Aguardando ação)', dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri };
+                    novoReg = { 
+                        id: Date.now(), 
+                        dataGeracao: new Date().toLocaleString('pt-PT'), 
+                        tipoMovimentacao: state.resultado.tipoMovimentacao,
+                        nome: state.resultado.nome, 
+                        cpf: state.resultado.cpf, 
+                        dataRescisao: dtFmt, 
+                        status: 'Gerado (Aguardando ação)', 
+                        dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri 
+                    };
                 }
                 salvarNoFirestore(novoReg);
             } catch (err) {
@@ -932,16 +1023,18 @@
             try {
                 const dataUri = await construtorDePdf({
                     nome: item.nome, cpf: item.cpf, admissao: item.admissao, dataRescisao: item.dataRescisao,
-                    motivo: item.motivo || 'sem_justa_causa', saude: item.saude, dental: item.dental
+                    motivo: item.motivo || 'sem_justa_causa', saude: item.saude, dental: item.dental,
+                    tipoMovimentacao: item.tipoMovimentacao || 'exclusao_rescisao'
                 });
 
                 const a = document.createElement('a'); a.href = dataUri;
-                a.download = `Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`;
+                const prefix = (item.tipoMovimentacao || 'exclusao').toUpperCase();
+                a.download = `Espelho_${prefix}_Amil_${item.nome.replace(/\s+/g, '_')}.pdf`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
 
                 mostrarAlerta(`Espelho de ${item.nome} gerado com sucesso!`);
                 
-                const novoItem = { ...item, pdfUrl: dataUri, status: 'Gerado (Aguardando ação)', observacao: 'Espelho gerado em lote.' };
+                const novoItem = { ...item, pdfUrl: dataUri, status: 'Gerado (Aguardando ação)', observacao: 'Espelho gerado na tabela.' };
                 salvarNoFirestore(novoItem);
             } catch (error) {
                 console.error(error); mostrarAlerta("Erro ao gerar PDF da linha.", "erro");
@@ -949,7 +1042,7 @@
         };
 
         // ==========================================
-        // LOTE DE DESLIGAMENTOS
+        // LOTE DE DESLIGAMENTOS (EXCLUSÕES)
         // ==========================================
         window.handleProcessarLote = () => {
             if (state.faturaSaude.length === 0 && state.faturaDental.length === 0) {
@@ -964,11 +1057,11 @@
                 const chaves = Object.keys(registro);
                 const cpfDigitado = limparDoc(extrairCpf(registro));
 
-                // Verifica se o CPF já existe no histórico atual
-                const jaExiste = state.historico.some(h => h.cpf === cpfDigitado);
+                // No Lote, assumimos 'exclusao_rescisao' como padrão
+                const jaExiste = state.historico.some(h => h.cpf === cpfDigitado && h.tipoMovimentacao === 'exclusao_rescisao');
                 if (jaExiste) {
                     ignorados++;
-                    return; // Ignora e avança para o próximo colaborador
+                    return; 
                 }
 
                 const dataKey = chaves.find(k => k.includes('rescis') || k.includes('deslig') || k.includes('demiss') || k.includes('saida') || k.includes('saída') || k.includes('data'));
@@ -992,12 +1085,13 @@
                 const admissaoRaw = extrairAdmissao(cadastro) || extrairAdmissao(registro);
                 const admissao = formatarData(admissaoRaw) || 'Não informado na Base';
 
-                const diasPassados = calcularDiasDesdeRescisao(dataApresentacao);
+                const diasPassados = calcularDiasDesdeEvento(dataApresentacao);
                 let obs = temPlano ? '⚠️ Espelho pronto para geração.' : '✅ Não possuía plano ativo nas faturas.';
                 if (temPlano && diasPassados > 30) obs = `⛔ Passaram ${diasPassados} dias da rescisão (prazo 30 dias). Exclusão obrigatória (perda do direito).`;
 
                 const novoItem = {
                     id: Date.now() + index,
+                    tipoMovimentacao: 'exclusao_rescisao',
                     dataGeracao: new Date().toLocaleString('pt-PT'), nome, cpf: cpfDigitado,
                     dataRescisao: dataApresentacao, admissao, motivo: 'sem_justa_causa',
                     saude: saude ? { ativo: true, carteirinha: extrairCarteirinha(saude), inicioPlano: inicioSaude, tempo: calcularTempo(inicioSaude, dataRaw) } : { ativo: false },
@@ -1006,7 +1100,7 @@
                     dataEntrega: '', emailHp: '', observacao: obs, pdfUrl: null
                 };
                 
-                state.historico.push(novoItem); // Atualiza localmente para evitar duplicados no mesmo lote
+                state.historico.push(novoItem);
                 salvarNoFirestore(novoItem);
                 adicionados++;
             });
@@ -1018,15 +1112,16 @@
             document.getElementById('boxLote').classList.add('border-gray-300', 'bg-gray-50');
         };
 
-        window.preencherEBuscar = (cpf, dtResc) => {
+        window.preencherEBuscar = (cpf, dtResc, tipoMov) => {
             document.getElementById('cpfBusca').value = cpf;
+            document.getElementById('tipoMovimentacaoBusca').value = tipoMov || 'exclusao_rescisao';
             if (dtResc && dtResc.includes('/')) {
                 const [d, m, y] = dtResc.split('/');
                 if (y && m && d) document.getElementById('dataDesligamento').value = `${y}-${m}-${d}`;
             } else if (dtResc && dtResc.includes('-')) {
                 document.getElementById('dataDesligamento').value = dtResc;
             }
-            mostrarAlerta("Dados preenchidos na busca! Selecione a Regra ANS e gere o espelho.");
+            mostrarAlerta("Dados preenchidos na busca! Processe para ver os detalhes.");
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
@@ -1037,7 +1132,7 @@
             const item = state.historico.find(i => i.id === id);
             if (item) {
                 item[campo] = valor;
-                if(campo === 'status') renderHistorico(); // Re-render só se mudar status para abrir campos condicionais
+                if(campo === 'status') renderHistorico(); 
             }
         };
 
@@ -1068,14 +1163,11 @@
 
         window.executarExclusao = async () => {
             if (!idParaExcluir) return;
-            
-            // Remove localmente para atualizar a UI instantaneamente
             state.historico = state.historico.filter(h => h.id !== idParaExcluir);
             renderHistorico();
             fecharModalExclusao();
             mostrarAlerta('Registo excluído permanentemente com sucesso!');
 
-            // Remove da Nuvem (Firestore)
             if (state.user && state.db) {
                 try {
                     await deleteDoc(doc(state.db, 'artifacts', state.appId, 'public', 'data', 'historicoAmil', idParaExcluir.toString()));
@@ -1095,39 +1187,43 @@
                 return;
             }
 
-            // Cabeçalhos (BOM adicionado para Excel ler UTF-8 corretamente)
-            let csvContent = "\uFEFFNome;CPF;Data de Rescisão;Motivo;Status Atual;Data Entrega;Dias Decorridos;SLA (Prazo 10 dias);Observações\n";
+            let csvContent = "\uFEFFTipo Movimentacao;Nome;CPF;Data Evento;Motivo (Rescisão);Status Atual;Data Entrega;Dias Decorridos;SLA (Prazo 10 dias);Observações\n";
             const dataAtual = new Date();
 
             state.historico.forEach(item => {
                 let dias = 0;
                 let slaStatus = "N/A";
+                const tipoReal = item.tipoMovimentacao || 'exclusao_rescisao';
                 
                 if (item.status === 'Sem plano ativo (Baixa automática)') {
-                    slaStatus = "Baixa Automática";
+                    slaStatus = "Baixa Automática / S/Ação";
                 } else if (item.dataRescisao) {
                     const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : dataAtual;
                     const [d, m, y] = item.dataRescisao.split('/');
                     if (d && m && y) {
                         const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
                         dias = Math.ceil((dataComparacao.getTime() - rDate.getTime()) / (1000 * 60 * 60 * 24));
-                        slaStatus = dias > 10 ? "FORA DO PRAZO" : "Dentro do Prazo";
                         
-                        // Se já foi processada sem atraso na data de entrega, congela o status
-                        if (['Exclusão processada', 'Concluído'].includes(item.status) && dias <= 10) {
+                        if (tipoReal === 'exclusao_rescisao') {
+                            slaStatus = dias > 10 ? "FORA DO PRAZO" : "Dentro do Prazo";
+                        } else {
+                            slaStatus = "Aplicável (Mov. Extra)";
+                        }
+                        
+                        if (['Exclusão processada', 'Concluído'].includes(item.status) && dias <= 10 && tipoReal === 'exclusao_rescisao') {
                             slaStatus = "Concluído no Prazo";
                         }
                     }
                 }
 
-                // Limpar campos para evitar quebra do CSV (remover ; e \n)
                 const limpa = str => str ? String(str).replace(/;/g, ',').replace(/\n/g, ' ').trim() : '';
 
                 const row = [
+                    tiposMovimentacaoMap[tipoReal] || 'N/A',
                     limpa(item.nome),
                     limpa(item.cpf),
                     limpa(item.dataRescisao),
-                    limpa(item.motivo || 'N/A'),
+                    tipoReal === 'exclusao_rescisao' ? limpa(item.motivo || 'N/A') : 'N/A',
                     limpa(item.status),
                     limpa(item.dataEntrega || 'Pendente'),
                     dias,
@@ -1138,12 +1234,11 @@
                 csvContent += row.join(";") + "\n";
             });
 
-            // Criar e baixar o ficheiro
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `Relatorio_Exclusoes_Amil_${new Date().toISOString().split('T')[0]}.csv`;
+            a.download = `Relatorio_Movimentacoes_Amil_${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1152,20 +1247,45 @@
             mostrarAlerta("Relatório Excel gerado com sucesso!");
         };
 
-        // Função para alternar entre as abas
+        // ==========================================
+        // ENVIO DE E-MAIL (PENDENTES)
+        // ==========================================
+        window.enviarEmailPendentes = () => {
+            const pendentes = state.historico.filter(h => 
+                h.status === 'Pendente de Exclusão' || h.status === 'Gerado (Aguardando ação)'
+            );
+
+            if (pendentes.length === 0) {
+                mostrarAlerta("Fantástico! Não existem movimentações pendentes para enviar.", "sucesso");
+                return;
+            }
+
+            const assunto = encodeURIComponent("Resumo de Pendências - Movimentações Amil");
+            
+            let corpoTexto = "Olá,\n\nSegue abaixo a lista de colaboradores com movimentações pendentes de ação no sistema:\n\n";
+            
+            pendentes.forEach((item, index) => {
+                const tipoLabel = tiposMovimentacaoMap[item.tipoMovimentacao || 'exclusao_rescisao'];
+                corpoTexto += `${index + 1}. [${tipoLabel}] Nome: ${item.nome} | CPF: ${item.cpf} | Data Evento: ${item.dataRescisao} | Status: ${item.status}\n`;
+            });
+            
+            corpoTexto += "\nFico à disposição para eventuais dúvidas ou envio de espelhos documentais.\n\nAtenciosamente.";
+            
+            const corpoFormatado = encodeURIComponent(corpoTexto);
+            window.location.href = `mailto:?subject=${assunto}&body=${corpoFormatado}`;
+        };
+
         window.mudarAbaHistorico = (aba) => {
             state.abaAtiva = aba;
             renderHistorico();
         };
 
-        // NOVO: Função para o input de pesquisa
         window.filtrarHistorico = (termo) => {
             state.termoBusca = termo.toLowerCase().trim();
             renderHistorico();
         };
 
         const renderHistorico = () => {
-            // --- CÁLCULO DO MINI-DASHBOARD ---
             let totalTratativas = 0;
             let totalAtrasos = 0;
             let totalConcluidosMes = 0;
@@ -1173,18 +1293,17 @@
             const dataAtual = new Date();
             const mesAtual = String(dataAtual.getMonth() + 1).padStart(2, '0');
             const anoAtual = dataAtual.getFullYear();
-            const strMesAno = `${mesAtual}/${anoAtual}`; // Ex: 04/2026
+            const strMesAno = `${mesAtual}/${anoAtual}`;
             const statusConcluidos = ['Exclusão processada', 'Sem plano ativo (Baixa automática)'];
 
             state.historico.forEach(item => {
                 const isConcluido = statusConcluidos.includes(item.status);
+                const tipoReal = item.tipoMovimentacao || 'exclusao_rescisao';
 
                 if (!isConcluido) {
-                    totalTratativas++; // Conta todas as pendências ativas
-                    
-                    // Cálculo de atraso (> 10 dias da rescisão)
+                    totalTratativas++; 
                     const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : dataAtual;
-                    if (item.dataRescisao) {
+                    if (item.dataRescisao && tipoReal === 'exclusao_rescisao') {
                         const [d, m, y] = item.dataRescisao.split('/');
                         if (d && m && y) {
                             const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
@@ -1194,14 +1313,12 @@
                         }
                     }
                 } else {
-                    // Verifica se a exclusão aconteceu neste mês
                     if (item.dataGeracao && item.dataGeracao.includes(strMesAno)) {
                         totalConcluidosMes++;
                     }
                 }
             });
 
-            // Atualiza o DOM do Dashboard
             const elPendencias = document.getElementById('dashPendencias');
             const elAtrasos = document.getElementById('dashAtrasos');
             const elConcluidos = document.getElementById('dashConcluidos');
@@ -1210,7 +1327,6 @@
             if (elConcluidos) elConcluidos.textContent = totalConcluidosMes;
 
 
-            // --- RENDERIZAÇÃO DA TABELA E ABAS ---
             const container = document.getElementById('tabelaHistoricoContainer');
             const pendenciasNaoTratadas = state.historico.filter(h => h.status === 'Pendente de Exclusão').length;
             const badge = document.getElementById('badgePendencias');
@@ -1220,7 +1336,6 @@
                 document.getElementById('qtdPendencias').textContent = pendenciasNaoTratadas;
             } else badge.classList.add('hidden');
 
-            // Lógica de Filtragem por Aba e por Busca
             const tabPendentes = document.getElementById('tabPendentes');
             const tabConcluidos = document.getElementById('tabConcluidos');
             
@@ -1235,11 +1350,9 @@
                 tabPendentes.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
             }
 
-            // Atualiza o texto e a bolinha (badge) de contagem dentro da aba
             tabPendentes.innerHTML = `Em Tratativa <span class="ml-1 ${state.abaAtiva === 'pendentes' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdPendentes}</span>`;
             tabConcluidos.innerHTML = `Concluídos / Excluídos <span class="ml-1 ${state.abaAtiva === 'concluidos' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdConcluidos}</span>`;
 
-            // Filtro aplicado: Aba Ativa + Termo de Busca
             let filtrados = state.historico.filter(h => {
                 const matchAba = state.abaAtiva === 'pendentes' ? !statusConcluidos.includes(h.status) : statusConcluidos.includes(h.status);
                 
@@ -1256,7 +1369,7 @@
                 if (state.termoBusca !== '') {
                     msgVazio = `Nenhum resultado encontrado para "<b>${state.termoBusca}</b>" nesta aba.`;
                 } else {
-                    msgVazio = state.abaAtiva === 'pendentes' ? 'Nenhuma tratativa pendente neste momento.' : 'Nenhuma exclusão processada ainda.';
+                    msgVazio = state.abaAtiva === 'pendentes' ? 'Nenhuma movimentação pendente neste momento.' : 'Nenhum processo concluído ainda.';
                 }
                 container.innerHTML = `<p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">${msgVazio}</p>`;
                 return;
@@ -1266,9 +1379,8 @@
                 <table class="w-full text-sm text-left text-gray-600">
                     <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
                         <tr>
-                            <th class="px-4 py-3">Data</th>
-                            <th class="px-4 py-3">Colaborador</th>
-                            <th class="px-4 py-3">Rescisão</th>
+                            <th class="px-4 py-3">Data Registo</th>
+                            <th class="px-4 py-3">Colaborador / Evento</th>
                             <th class="px-4 py-3" style="min-width: 400px;">Status, Ações e Observações</th>
                         </tr>
                     </thead>
@@ -1280,13 +1392,16 @@
                 const bSem = b.status === 'Sem plano ativo (Baixa automática)';
                 if (aSem && !bSem) return 1;
                 if (!aSem && bSem) return -1;
-                return 0;
+                return b.id - a.id;
             });
 
             ordenados.forEach(item => {
+                const tipoReal = item.tipoMovimentacao || 'exclusao_rescisao';
+                const labelTipo = tiposMovimentacaoMap[tipoReal];
+
                 const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : new Date();
                 let temAtraso = false;
-                if (!['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && item.dataRescisao) {
+                if (!['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && item.dataRescisao && tipoReal === 'exclusao_rescisao') {
                     const [d, m, y] = item.dataRescisao.split('/');
                     if (d && m && y) {
                         const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
@@ -1295,9 +1410,9 @@
                 }
 
                 const planoAtivo = item.status !== 'Sem plano ativo (Baixa automática)';
-                const diasPass = calcularDiasDesdeRescisao(item.dataRescisao);
-                const perdeuPrazo = planoAtivo && diasPass > 30;
-                const semDireito = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa';
+                const diasPass = calcularDiasDesdeEvento(item.dataRescisao);
+                const perdeuPrazo = planoAtivo && diasPass > 30 && (tipoReal === 'exclusao_rescisao' || tipoReal === 'exclusao_desistencia');
+                const semDireito = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa' && tipoReal === 'exclusao_rescisao';
 
                 const statusColor = (item.status === 'Exclusão processada' || item.status === 'Sem plano ativo (Baixa automática)') ? 'bg-green-100 text-green-800 border-green-300' :
                                     (item.status === 'Gerado (Aguardando ação)' || item.status === 'Pendente de Exclusão') ? 'bg-gray-100 text-gray-600 border-gray-300' : 'bg-blue-50 text-blue-800 border-blue-300';
@@ -1305,36 +1420,39 @@
                 html += `
                     <tr class="border-b border-gray-100 hover:bg-gray-50/30">
                         <td class="px-4 py-4 align-top pt-5">${item.dataGeracao.split(' ')[0]}</td>
-                        <td class="px-4 py-4 align-top pt-5 font-medium text-gray-800">
-                            ${item.nome}
-                            <br/><span class="text-xs text-gray-400 font-normal">CPF: ${item.cpf}</span>
+                        <td class="px-4 py-4 align-top pt-5">
+                            <div class="font-medium text-gray-800 mb-1">${item.nome}</div>
+                            <div class="text-xs text-gray-400 mb-2">CPF: ${item.cpf}</div>
+                            <span class="bg-indigo-100 text-indigo-800 text-[10px] px-2 py-0.5 rounded font-bold uppercase">${labelTipo}</span>
+                            <div class="text-xs text-gray-500 mt-1">Evento: <strong>${item.dataRescisao}</strong></div>
                         </td>
-                        <td class="px-4 py-4 align-top pt-5">${item.dataRescisao}</td>
                         <td class="px-4 py-4 align-top">
                             <div class="flex gap-2 mb-3">
                                 <select onchange="atualizarHistoricoInput(${item.id}, 'status', this.value); salvarLinhaHistorico(${item.id})" class="flex-1 p-2 border rounded text-sm outline-none font-medium ${statusColor}">
-                                    <option value="Pendente de Exclusão" ${item.status==='Pendente de Exclusão'?'selected':''}>Pendente de Exclusão</option>
+                                    <option value="Pendente de Exclusão" ${item.status==='Pendente de Exclusão'?'selected':''}>Pendente de Ação</option>
                                     <option value="Gerado (Aguardando ação)" ${item.status==='Gerado (Aguardando ação)'?'selected':''}>Gerado (Aguardando ação)</option>
                                     <option value="Preenchido e assinado" ${item.status==='Preenchido e assinado'?'selected':''}>Preenchido e assinado</option>
                                     <option value="Enviado para o colaborador" ${item.status==='Enviado para o colaborador'?'selected':''}>Enviado para o colaborador</option>
                                     <option value="Encaminhado para hphealth" ${item.status==='Encaminhado para hphealth'?'selected':''}>Encaminhado para hphealth</option>
-                                    <option value="Exclusão processada" ${item.status==='Exclusão processada'?'selected':''}>Exclusão processada</option>
+                                    <option value="Exclusão processada" ${item.status==='Exclusão processada'?'selected':''}>Concluído / Processado</option>
                                     <option value="Sem plano ativo (Baixa automática)" ${item.status==='Sem plano ativo (Baixa automática)'?'selected':''}>Sem plano ativo (Baixa automática)</option>
                                 </select>
                                 
                                 ${item.status === 'Pendente de Exclusão' && !item.pdfUrl ? `
                                     <div class="flex flex-col gap-1">
                                         <div class="flex gap-1">
+                                            ${tipoReal === 'exclusao_rescisao' ? `
                                             <select onchange="atualizarHistoricoInput(${item.id}, 'motivo', this.value)" class="p-2 border border-gray-300 rounded text-xs outline-none bg-white w-28">
                                                 <option value="pedido_demissao" ${item.motivo==='pedido_demissao'?'selected':''}>Pedido Dem.</option>
                                                 <option value="sem_justa_causa" ${(!item.motivo || item.motivo==='sem_justa_causa')?'selected':''}>Sem Justa</option>
                                                 <option value="com_justa_causa" ${item.motivo==='com_justa_causa'?'selected':''}>Com Justa</option>
                                                 <option value="aposentadoria" ${item.motivo==='aposentadoria'?'selected':''}>Aposent.</option>
                                             </select>
+                                            ` : ''}
                                             <button onclick="handleGerarPdfDaLinha(${item.id})" class="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white p-2 rounded px-3 transition-colors text-xs font-bold gap-1 shadow-sm whitespace-nowrap" title="Gerar Espelho com dados do Lote">
                                                 <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Gerar PDF
                                             </button>
-                                            <button onclick="preencherEBuscar('${item.cpf}', '${item.dataRescisao}')" class="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded transition-colors text-xs font-bold" title="Avaliar manualmente na Busca">
+                                            <button onclick="preencherEBuscar('${item.cpf}', '${item.dataRescisao}', '${tipoReal}')" class="flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-700 p-2 rounded transition-colors text-xs font-bold" title="Avaliar manualmente na Busca">
                                                 <i data-lucide="search" class="w-3.5 h-3.5"></i>
                                             </button>
                                         </div>
@@ -1348,7 +1466,7 @@
                                 ` : ''}
 
                                 ${item.pdfUrl ? `
-                                    <a href="${item.pdfUrl}" download="Espelho_Amil_${item.nome.replace(/\s+/g, '_')}.pdf" class="flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white p-2 rounded px-3 transition-colors" title="Baixar PDF do Espelho novamente">
+                                    <a href="${item.pdfUrl}" download="Espelho_${tipoReal}_Amil_${item.nome.replace(/\s+/g, '_')}.pdf" class="flex items-center justify-center bg-gray-800 hover:bg-gray-700 text-white p-2 rounded px-3 transition-colors" title="Baixar PDF do Espelho novamente">
                                         <i data-lucide="download" class="w-4 h-4"></i>
                                     </a>
                                 ` : ''}
@@ -1373,7 +1491,7 @@
                                         <label class="text-xs text-gray-500 mb-1 block">E-mail de Envio:</label>
                                         <div class="flex gap-2">
                                             <input type="email" placeholder="exemplo@hphealth.com.br" value="${item.emailHp||''}" onchange="atualizarHistoricoInput(${item.id}, 'emailHp', this.value)" class="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:ring-1 outline-none" />
-                                            <a href="mailto:${item.emailHp || ''}?subject=Formulário de Exclusão Amil - ${item.nome}&body=Olá,%0D%0A%0D%0ASegue em anexo o formulário de exclusão referente ao colaborador ${item.nome} (CPF: ${item.cpf})." class="p-1.5 rounded flex items-center justify-center transition-colors ${item.emailHp ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'}" title="Abrir Caixa de E-mail">
+                                            <a href="mailto:${item.emailHp || ''}?subject=Formulário AMIL (${labelTipo}) - ${item.nome}&body=Olá,%0D%0A%0D%0ASegue em anexo o formulário referente à movimentação de ${labelTipo} do colaborador ${item.nome} (CPF: ${item.cpf})." class="p-1.5 rounded flex items-center justify-center transition-colors ${item.emailHp ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed pointer-events-none'}" title="Abrir Caixa de E-mail">
                                                 <i data-lucide="send" class="w-4 h-4"></i>
                                             </a>
                                         </div>

@@ -251,7 +251,7 @@
                 </h2>
                 <div class="flex flex-wrap items-center gap-2">
                     <div id="badgePendencias" class="hidden bg-orange-100 text-orange-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border border-orange-200">
-                        <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências a tratar: <span id="qtdPendencias">0</span>
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i> Pendências Totais: <span id="qtdPendencias">0</span>
                     </div>
                     <button onclick="enviarEmailPendentes()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 shadow-sm whitespace-nowrap" title="Enviar resumo de pendentes por e-mail">
                         <i data-lucide="mail" class="w-4 h-4"></i> Enviar Pendentes
@@ -274,7 +274,7 @@
                 
                 <div class="bg-red-50 border border-red-100 p-4 rounded-xl flex items-center justify-between shadow-sm">
                     <div>
-                        <p class="text-sm font-medium text-red-600 mb-1">Em Atraso (SLA > 10 dias)</p>
+                        <p class="text-sm font-medium text-red-600 mb-1">Exclusões em Atraso (> 10 dias)</p>
                         <h4 class="text-3xl font-bold text-red-900" id="dashAtrasos">0</h4>
                     </div>
                     <div class="p-3 bg-red-100 rounded-lg text-red-600"><i data-lucide="alert-triangle" class="w-6 h-6"></i></div>
@@ -297,14 +297,16 @@
                 <input type="text" id="inputPesquisaHistorico" oninput="filtrarHistorico(this.value)" placeholder="Pesquisar por nome ou CPF no histórico..." class="w-full pl-10 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-shadow">
             </div>
 
-            <!-- ABAS DE NAVEGAÇÃO -->
+            <!-- ABAS DE NAVEGAÇÃO POR TIPO DE MOVIMENTAÇÃO -->
             <div class="flex border-b border-gray-200 mb-4 gap-2 overflow-x-auto">
-                <button onclick="mudarAbaHistorico('pendentes')" id="tabPendentes" class="px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors">Em Tratativa</button>
-                <button onclick="mudarAbaHistorico('concluidos')" id="tabConcluidos" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Concluídos / Excluídos</button>
+                <button onclick="mudarAbaHistorico('exclusoes')" id="tabExclusoes" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Exclusões</button>
+                <button onclick="mudarAbaHistorico('adesoes')" id="tabAdesoes" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Adesões / Inclusões</button>
+                <button onclick="mudarAbaHistorico('alteracoes')" id="tabAlteracoes" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Upgrades / Downgrades</button>
+                <button onclick="mudarAbaHistorico('concluidos')" id="tabConcluidos" class="px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors">Concluídos</button>
             </div>
             
             <div id="tabelaHistoricoContainer" class="overflow-x-auto pb-4">
-                <p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhum controlo gerado nesta sessão.</p>
+                <p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">Nenhuma movimentação registada nesta aba.</p>
             </div>
         </div>
 
@@ -324,7 +326,7 @@
             resultado: null, historico: [], user: null, db: null,
             pdfOficialUrl: null, pdfOficialNome: '',
             appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
-            abaAtiva: 'pendentes',
+            abaAtiva: 'exclusoes', // A aba padrão agora é exclusões pendentes
             termoBusca: '',
             historicoBases: []
         };
@@ -338,6 +340,11 @@
             'upgrade': 'Upgrade de Plano',
             'downgrade': 'Downgrade de Plano'
         };
+
+        const statusConcluidosGeral = ['Exclusão processada', 'Sem plano ativo (Baixa automática)'];
+        const tiposExclusaoGrp = ['exclusao_rescisao', 'exclusao_desistencia', 'exclusao_dep'];
+        const tiposAdesaoGrp = ['adesao', 'inclusao_dep'];
+        const tiposAlteracaoGrp = ['upgrade', 'downgrade'];
 
         // Inicializar ícones
         lucide.createIcons();
@@ -990,7 +997,7 @@
                 mostrarAlerta(`Espelho gerado com sucesso!`);
                 
                 // Busca se já existe um registro idêntico (mesmo CPF e mesmo Tipo de Movimentação pendente)
-                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.tipoMovimentacao === state.resultado.tipoMovimentacao && !['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(h.status));
+                const idx = state.historico.findIndex(h => h.cpf === state.resultado.cpf && h.tipoMovimentacao === state.resultado.tipoMovimentacao && !statusConcluidosGeral.includes(h.status));
                 const dtFmt = state.resultado.dtDesligamento.includes('-') ? state.resultado.dtDesligamento.split('-').reverse().join('/') : state.resultado.dtDesligamento;
                 
                 let novoReg;
@@ -1008,6 +1015,12 @@
                         dataEntrega: '', emailHp: '', observacao: '', pdfUrl: dataUri 
                     };
                 }
+                
+                // Direciona automaticamente a aba ativa para o tipo de movimentação que acabou de criar
+                if (tiposAdesaoGrp.includes(novoReg.tipoMovimentacao)) state.abaAtiva = 'adesoes';
+                else if (tiposAlteracaoGrp.includes(novoReg.tipoMovimentacao)) state.abaAtiva = 'alteracoes';
+                else state.abaAtiva = 'exclusoes';
+
                 salvarNoFirestore(novoReg);
             } catch (err) {
                 console.error(err); mostrarAlerta("Erro ao gerar PDF.", "erro");
@@ -1107,6 +1120,7 @@
 
             mostrarAlerta(`Lote processado! ${adicionados} adicionados, ${ignorados} ignorados (já existiam).`);
             state.loteDesligamentos = [];
+            state.abaAtiva = 'exclusoes'; // Vai para a aba de exclusões ver o lote novo
             document.getElementById('areaLoteLoaded').classList.add('hidden');
             document.getElementById('boxLote').classList.remove('border-purple-400', 'bg-purple-50');
             document.getElementById('boxLote').classList.add('border-gray-300', 'bg-gray-50');
@@ -1294,10 +1308,15 @@
             const mesAtual = String(dataAtual.getMonth() + 1).padStart(2, '0');
             const anoAtual = dataAtual.getFullYear();
             const strMesAno = `${mesAtual}/${anoAtual}`;
-            const statusConcluidos = ['Exclusão processada', 'Sem plano ativo (Baixa automática)'];
+
+            // Contagens para os distintivos (badges) das abas
+            const qtdExclusoes = state.historico.filter(h => !statusConcluidosGeral.includes(h.status) && tiposExclusaoGrp.includes(h.tipoMovimentacao || 'exclusao_rescisao')).length;
+            const qtdAdesoes = state.historico.filter(h => !statusConcluidosGeral.includes(h.status) && tiposAdesaoGrp.includes(h.tipoMovimentacao)).length;
+            const qtdAlteracoes = state.historico.filter(h => !statusConcluidosGeral.includes(h.status) && tiposAlteracaoGrp.includes(h.tipoMovimentacao)).length;
+            const qtdConcluidos = state.historico.filter(h => statusConcluidosGeral.includes(h.status)).length;
 
             state.historico.forEach(item => {
-                const isConcluido = statusConcluidos.includes(item.status);
+                const isConcluido = statusConcluidosGeral.includes(item.status);
                 const tipoReal = item.tipoMovimentacao || 'exclusao_rescisao';
 
                 if (!isConcluido) {
@@ -1319,6 +1338,7 @@
                 }
             });
 
+            // Atualiza Dashboard Superior
             const elPendencias = document.getElementById('dashPendencias');
             const elAtrasos = document.getElementById('dashAtrasos');
             const elConcluidos = document.getElementById('dashConcluidos');
@@ -1336,26 +1356,38 @@
                 document.getElementById('qtdPendencias').textContent = pendenciasNaoTratadas;
             } else badge.classList.add('hidden');
 
-            const tabPendentes = document.getElementById('tabPendentes');
-            const tabConcluidos = document.getElementById('tabConcluidos');
-            
-            const qtdPendentes = state.historico.filter(h => !statusConcluidos.includes(h.status)).length;
-            const qtdConcluidos = state.historico.filter(h => statusConcluidos.includes(h.status)).length;
+            // Atualiza Estilos das Abas
+            const tabsIdArray = ['exclusoes', 'adesoes', 'alteracoes', 'concluidos'];
+            tabsIdArray.forEach(tab => {
+                const el = document.getElementById(`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`);
+                if(state.abaAtiva === tab) {
+                    el.className = "px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors";
+                } else {
+                    el.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
+                }
+            });
 
-            if(state.abaAtiva === 'pendentes') {
-                tabPendentes.className = "px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors";
-                tabConcluidos.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
-            } else {
-                tabConcluidos.className = "px-4 py-2 font-semibold text-sm border-b-2 border-blue-600 text-blue-600 whitespace-nowrap transition-colors";
-                tabPendentes.className = "px-4 py-2 font-semibold text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700 whitespace-nowrap transition-colors";
-            }
+            // Adiciona Números Coloridos às Abas
+            const colorAba = (aba) => state.abaAtiva === aba ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600';
+            document.getElementById('tabExclusoes').innerHTML = `Exclusões <span class="ml-1 ${colorAba('exclusoes')} py-0.5 px-2 rounded-full text-xs">${qtdExclusoes}</span>`;
+            document.getElementById('tabAdesoes').innerHTML = `Adesões / Inclusões <span class="ml-1 ${colorAba('adesoes')} py-0.5 px-2 rounded-full text-xs">${qtdAdesoes}</span>`;
+            document.getElementById('tabAlteracoes').innerHTML = `Upgrades / Downgrades <span class="ml-1 ${colorAba('alteracoes')} py-0.5 px-2 rounded-full text-xs">${qtdAlteracoes}</span>`;
+            document.getElementById('tabConcluidos').innerHTML = `Concluídos <span class="ml-1 ${colorAba('concluidos')} py-0.5 px-2 rounded-full text-xs">${qtdConcluidos}</span>`;
 
-            tabPendentes.innerHTML = `Em Tratativa <span class="ml-1 ${state.abaAtiva === 'pendentes' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdPendentes}</span>`;
-            tabConcluidos.innerHTML = `Concluídos / Excluídos <span class="ml-1 ${state.abaAtiva === 'concluidos' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-600'} py-0.5 px-2 rounded-full text-xs">${qtdConcluidos}</span>`;
-
+            // Filtragem Final
             let filtrados = state.historico.filter(h => {
-                const matchAba = state.abaAtiva === 'pendentes' ? !statusConcluidos.includes(h.status) : statusConcluidos.includes(h.status);
-                
+                const isConcluido = statusConcluidosGeral.includes(h.status);
+                const tipo = h.tipoMovimentacao || 'exclusao_rescisao';
+                let matchAba = false;
+
+                if (state.abaAtiva === 'concluidos') {
+                    matchAba = isConcluido;
+                } else if (!isConcluido) {
+                    if (state.abaAtiva === 'exclusoes') matchAba = tiposExclusaoGrp.includes(tipo);
+                    else if (state.abaAtiva === 'adesoes') matchAba = tiposAdesaoGrp.includes(tipo);
+                    else if (state.abaAtiva === 'alteracoes') matchAba = tiposAlteracaoGrp.includes(tipo);
+                }
+
                 const termo = state.termoBusca;
                 const matchBusca = termo === '' || 
                                   (h.nome && h.nome.toLowerCase().includes(termo)) || 
@@ -1365,11 +1397,9 @@
             });
 
             if (filtrados.length === 0) {
-                let msgVazio = 'Nenhuma tratativa encontrada.';
+                let msgVazio = 'Nenhuma tratativa encontrada nesta aba.';
                 if (state.termoBusca !== '') {
                     msgVazio = `Nenhum resultado encontrado para "<b>${state.termoBusca}</b>" nesta aba.`;
-                } else {
-                    msgVazio = state.abaAtiva === 'pendentes' ? 'Nenhuma movimentação pendente neste momento.' : 'Nenhum processo concluído ainda.';
                 }
                 container.innerHTML = `<p class="text-sm text-gray-500 italic bg-gray-50 p-4 rounded-lg text-center border border-gray-100">${msgVazio}</p>`;
                 return;
@@ -1401,7 +1431,7 @@
 
                 const dataComparacao = item.dataEntrega ? new Date(`${item.dataEntrega}T00:00:00`) : new Date();
                 let temAtraso = false;
-                if (!['Exclusão processada', 'Sem plano ativo (Baixa automática)'].includes(item.status) && item.dataRescisao && tipoReal === 'exclusao_rescisao') {
+                if (!statusConcluidosGeral.includes(item.status) && item.dataRescisao && tipoReal === 'exclusao_rescisao') {
                     const [d, m, y] = item.dataRescisao.split('/');
                     if (d && m && y) {
                         const rDate = new Date(`${y}-${m}-${d}T00:00:00`);
@@ -1414,7 +1444,7 @@
                 const perdeuPrazo = planoAtivo && diasPass > 30 && (tipoReal === 'exclusao_rescisao' || tipoReal === 'exclusao_desistencia');
                 const semDireito = planoAtivo && item.motivo && item.motivo !== 'sem_justa_causa' && tipoReal === 'exclusao_rescisao';
 
-                const statusColor = (item.status === 'Exclusão processada' || item.status === 'Sem plano ativo (Baixa automática)') ? 'bg-green-100 text-green-800 border-green-300' :
+                const statusColor = statusConcluidosGeral.includes(item.status) ? 'bg-green-100 text-green-800 border-green-300' :
                                     (item.status === 'Gerado (Aguardando ação)' || item.status === 'Pendente de Exclusão') ? 'bg-gray-100 text-gray-600 border-gray-300' : 'bg-blue-50 text-blue-800 border-blue-300';
 
                 html += `
@@ -1499,7 +1529,7 @@
                                 ` : ''}
 
                                 <div>
-                                    <textarea placeholder="Adicionar observações..." onchange="atualizarHistoricoInput(${item.id}, 'observacao', this.value)" rows="2" class="w-full p-2 border rounded text-xs outline-none resize-none ${item.status === 'Sem plano ativo (Baixa automática)' ? 'border-green-200 bg-green-50/30 focus:ring-green-400' : 'bg-yellow-50/30 focus:ring-yellow-400 border-gray-200'}">${item.observacao||''}</textarea>
+                                    <textarea placeholder="Adicionar observações..." onchange="atualizarHistoricoInput(${item.id}, 'observacao', this.value)" rows="2" class="w-full p-2 border rounded text-xs outline-none resize-none ${statusConcluidosGeral.includes(item.status) ? 'border-green-200 bg-green-50/30 focus:ring-green-400' : 'bg-yellow-50/30 focus:ring-yellow-400 border-gray-200'}">${item.observacao||''}</textarea>
                                 </div>
                                 
                                 <div class="flex gap-2 mt-1">

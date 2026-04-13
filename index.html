@@ -144,9 +144,10 @@
                 <i data-lucide="search" class="text-gray-400 w-5 h-5"></i> 2. Nova Movimentação
             </h2>
             
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
-                <div class="w-full">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Movimentação</label>
+            <!-- GRID ATUALIZADA PARA 5 COLUNAS PARA INCLUIR O NOME -->
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+                <div class="w-full md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Movimentação</label>
                     <select id="tipoMovimentacaoBusca" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium text-indigo-900 bg-white">
                         <option value="exclusao_rescisao">Exclusão (Desligamento)</option>
                         <option value="adesao">Adesão (Novo)</option>
@@ -157,15 +158,19 @@
                         <option value="downgrade">Downgrade de Plano</option>
                     </select>
                 </div>
-                <div class="w-full">
+                <div class="w-full md:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1">CPF do Titular</label>
-                    <input type="text" id="cpfBusca" placeholder="Ex: 55566677788" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
+                    <input type="text" id="cpfBusca" placeholder="Apenas números" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <div class="w-full">
+                <div class="w-full md:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1" title="Opcional. Preencha apenas se não estiver na base.">Nome (Se Novo)</label>
+                    <input type="text" id="nomeBusca" placeholder="Opcional..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
+                </div>
+                <div class="w-full md:col-span-1">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Data do Evento</label>
                     <input type="date" id="dataDesligamento" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"/>
                 </div>
-                <button onclick="handleBuscar()" class="w-full px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm whitespace-nowrap">
+                <button onclick="handleBuscar()" class="w-full md:col-span-1 px-6 py-2 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 transition-colors h-[42px] shadow-sm whitespace-nowrap">
                     Processar
                 </button>
             </div>
@@ -738,14 +743,11 @@
 
             const tipoMovimentacao = document.getElementById('tipoMovimentacaoBusca').value;
             const cpf = limparDoc(document.getElementById('cpfBusca').value);
+            const nomeDigitado = document.getElementById('nomeBusca').value.trim();
             const dtDesligamento = document.getElementById('dataDesligamento').value;
 
             if (!cpf || !dtDesligamento) {
                 document.getElementById('erroPesquisaMsg').textContent = 'Preencha o CPF e a Data do Evento.';
-                errEl.classList.remove('hidden'); return;
-            }
-            if (state.faturaSaude.length === 0 && state.faturaDental.length === 0 && tipoMovimentacao !== 'adesao') {
-                document.getElementById('erroPesquisaMsg').textContent = 'As faturas precisam estar carregadas (exceto para novas Adesões não faturadas).';
                 errEl.classList.remove('hidden'); return;
             }
 
@@ -753,13 +755,28 @@
             const saude = state.faturaSaude.find(f => limparDoc(extrairCpf(f)) === cpf);
             const dental = state.faturaDental.find(f => limparDoc(extrairCpf(f)) === cpf);
 
+            // Verifica obrigatoriedade de faturas
             if (!cad && !saude && !dental && tipoMovimentacao !== 'adesao') {
-                document.getElementById('erroPesquisaMsg').textContent = 'Colaborador não encontrado.';
+                document.getElementById('erroPesquisaMsg').textContent = 'Colaborador não encontrado. As faturas precisam estar carregadas.';
                 errEl.classList.remove('hidden'); return;
             }
 
-            const nome = extrairNome(cad) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado (Preenchimento Manual)';
-            const adm = formatarData(extrairAdmissao(cad)) || 'Não informado na Base';
+            // Exige nome para adesões se não for achado em lugar nenhum
+            if (!cad && !saude && !dental && tipoMovimentacao === 'adesao' && !nomeDigitado) {
+                document.getElementById('erroPesquisaMsg').textContent = 'Para novas adesões não localizadas, por favor, preencha o campo "Nome".';
+                errEl.classList.remove('hidden'); return;
+            }
+
+            const nome = nomeDigitado || extrairNome(cad) || extrairNome(saude) || extrairNome(dental) || 'Nome não identificado';
+            
+            // Para adesões, se não houver admissão na base, assume a data do evento (que seria a admissão)
+            let adm = formatarData(extrairAdmissao(cad));
+            if (!adm && tipoMovimentacao === 'adesao') {
+                adm = dtDesligamento.split('-').reverse().join('/');
+            } else if (!adm) {
+                adm = 'Não informado na Base';
+            }
+
             const iniSaude = extrairDataInicio(saude);
             const iniDental = extrairDataInicio(dental);
 
